@@ -51,7 +51,28 @@ class FlagQuizService:
         self.logger = logger
         self._rounds: dict[tuple[int, int, int], ActiveRound] = {}
         self._codes: list[str] = ["DE", "US", "GB", "FR", "IT", "ES", "NL", "PL", "SE", "NO", "JP", "KR", "CN", "BR", "AR", "MX", "CA", "AU", "AT", "CH"]
-        self._code_to_name: dict[str, str] = {}
+        self._code_to_name: dict[str, str] = {
+            "DE": "Deutschland",
+            "US": "Vereinigte Staaten",
+            "GB": "Vereinigtes Königreich",
+            "FR": "Frankreich",
+            "IT": "Italien",
+            "ES": "Spanien",
+            "NL": "Niederlande",
+            "PL": "Polen",
+            "SE": "Schweden",
+            "NO": "Norwegen",
+            "JP": "Japan",
+            "KR": "Südkorea",
+            "CN": "China",
+            "BR": "Brasilien",
+            "AR": "Argentinien",
+            "MX": "Mexiko",
+            "CA": "Kanada",
+            "AU": "Australien",
+            "AT": "Österreich",
+            "CH": "Schweiz",
+        }
         self._code_to_flag_url: dict[str, str] = {}
         self._alias_to_code: dict[str, str] = {
             "deutschland": "DE",
@@ -69,6 +90,15 @@ class FlagQuizService:
             "italy": "IT",
             "spanien": "ES",
             "spain": "ES",
+            "niederlande": "NL",
+            "netherlands": "NL",
+            "holland": "NL",
+            "polen": "PL",
+            "poland": "PL",
+            "schweden": "SE",
+            "sweden": "SE",
+            "norwegen": "NO",
+            "norway": "NO",
             "japan": "JP",
             "suedkorea": "KR",
             "südkorea": "KR",
@@ -78,6 +108,8 @@ class FlagQuizService:
             "brazil": "BR",
             "argentinien": "AR",
             "argentina": "AR",
+            "mexiko": "MX",
+            "mexico": "MX",
             "kanada": "CA",
             "canada": "CA",
             "australien": "AU",
@@ -88,6 +120,7 @@ class FlagQuizService:
             "switzerland": "CH",
         }
         self._loaded_country_data = False
+        self._last_country_data_attempt_at: datetime | None = None
         self._last_round_start_at: dict[tuple[int, int, int], datetime] = {}
         self._recent_codes_by_guild: dict[int, list[str]] = {}
         self._resolve_locks: dict[tuple[int, int, int], asyncio.Lock] = {}
@@ -153,32 +186,65 @@ class FlagQuizService:
     async def _ensure_country_data(self):
         if self._loaded_country_data:
             return
-        self._loaded_country_data = True
+        now = datetime.now(timezone.utc)
+        if self._last_country_data_attempt_at and (now - self._last_country_data_attempt_at).total_seconds() < 300:
+            return
+        self._last_country_data_attempt_at = now
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
+                loaded = False
                 res = await client.get("https://restcountries.com/v3.1/all?fields=cca2,name,translations,flags")
-            if res.status_code != 200:
-                return
-            data = res.json()
-            codes: list[str] = []
-            for row in data:
-                code = str((row or {}).get("cca2", "")).upper().strip()
-                if len(code) != 2:
-                    continue
-                name = str(((row or {}).get("name", {}) or {}).get("common", code)).strip() or code
-                de = str((((row or {}).get("translations", {}) or {}).get("deu", {}) or {}).get("common", "")).strip()
-                # Für UI/Buttons bevorzugen wir den deutschen Ländernamen.
-                self._code_to_name[code] = de or name
-                flags = (row or {}).get("flags", {}) or {}
-                flag_url = str(flags.get("png") or "").strip()
-                if flag_url:
-                    self._code_to_flag_url[code] = flag_url
-                self._alias_to_code[self._normalize(name)] = code
-                if de:
-                    self._alias_to_code[self._normalize(de)] = code
-                codes.append(code)
-            if codes:
-                self._codes = sorted(set(codes))
+                if res.status_code == 200:
+                    data = res.json()
+                    codes: list[str] = []
+                    for row in data:
+                        code = str((row or {}).get("cca2", "")).upper().strip()
+                        if len(code) != 2:
+                            continue
+                        name = str(((row or {}).get("name", {}) or {}).get("common", code)).strip() or code
+                        de = str((((row or {}).get("translations", {}) or {}).get("deu", {}) or {}).get("common", "")).strip()
+                        # Für UI/Buttons bevorzugen wir den deutschen Ländernamen.
+                        self._code_to_name[code] = de or name
+                        flags = (row or {}).get("flags", {}) or {}
+                        flag_url = str(flags.get("png") or "").strip()
+                        if flag_url:
+                            self._code_to_flag_url[code] = flag_url
+                        self._alias_to_code[self._normalize(name)] = code
+                        if de:
+                            self._alias_to_code[self._normalize(de)] = code
+                        codes.append(code)
+                    if codes:
+                        self._codes = sorted(set(codes))
+                        loaded = True
+
+                # Fallback: Codes + Namen von FlagCDN laden, falls RestCountries nicht erreichbar ist.
+                if not loaded:
+                    for url in ("https://flagcdn.com/de/codes.json", "https://flagcdn.com/en/codes.json"):
+                        alt = await client.get(url)
+                        if alt.status_code != 200:
+                            continue
+                        data = alt.json()
+                        if not isinstance(data, dict):
+                            continue
+                        for k, v in data.items():
+                            code = str(k or "").upper().strip()
+                            name = str(v or "").strip()
+                            if len(code) != 2:
+                                continue
+                            if name:
+                                self._code_to_name[code] = name
+                                self._alias_to_code[self._normalize(name)] = code
+                        loaded = True
+                        break
+
+                # Sicherstellen, dass vorhandene Namen immer als gültige Antwort-Aliase zählen.
+                for code, name in self._code_to_name.items():
+                    if len(str(code)) == 2 and str(name).strip():
+                        self._alias_to_code[self._normalize(str(name))] = str(code).upper()
+
+                if self._code_to_name:
+                    self._codes = sorted(set([str(c).upper() for c in self._codes] + [str(c).upper() for c in self._code_to_name.keys() if len(str(c)) == 2]))
+                self._loaded_country_data = loaded
         except Exception:
             pass
 
