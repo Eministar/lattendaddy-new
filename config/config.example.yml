@@ -118,6 +118,8 @@ moderation:
     news_send_user_ids: []
     youtube_send_role_ids: []
     youtube_send_user_ids: []
+    nebu_send_role_ids: []
+    nebu_send_user_ids: []
     guide_build_role_ids: []
     guide_build_user_ids: []
     application_decide_role_ids: []

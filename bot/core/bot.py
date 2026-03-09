@@ -66,6 +66,8 @@ from bot.modules.tempvoice.services.tempvoice_service import TempVoiceService
 from bot.modules.tickets.views.support_panel import SupportPanelView
 from bot.modules.fun.cogs.fun_commands import FunCommands
 from bot.modules.ping.cogs.ping_commands import PingCommands
+from bot.modules.sponsor.cogs.sponsor_commands import SponsorCommands
+from bot.modules.sponsor.services.sponsor_service import SponsorService
 from bot.modules.suggestions.services.suggestion_service import SuggestionService
 from bot.modules.suggestions.cogs.suggestion_commands import SuggestionCommands
 from bot.modules.suggestions.cogs.suggestion_forum_listener import SuggestionForumListener
@@ -141,6 +143,7 @@ class StarryBot(commands.Bot):
         self.news_service = NewsService(self, self.settings, self.db, self.logger)
         self.application_service = ApplicationService(self, self.settings, self.db, self.logger)
         self.placeholder_service = PlaceholderService(self, self.settings, self.db, self.logger)
+        self.sponsor_service = SponsorService(self, self.settings, self.logger)
         self.welcome_service = WelcomeService(self, self.settings, self.db, self.logger)
         self.wzs_service = WortZumSonntagService(self, self.settings, self.db, self.logger)
         self.deepseek_service = DeepSeekService(self, self.settings, self.logger)
@@ -203,6 +206,7 @@ class StarryBot(commands.Bot):
 
         await self.add_cog(FunCommands(self))
         await self.add_cog(PingCommands(self))
+        await self.add_cog(SponsorCommands(self))
         await self.add_cog(SuggestionForumListener(self))
         await self.add_cog(SuggestionCommands(self))
         await self.add_cog(SeelsorgeListener(self))

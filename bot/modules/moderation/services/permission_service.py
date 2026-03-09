@@ -112,6 +112,7 @@ MODERATION_ACTIONS: tuple[ModerationActionSpec, ...] = (
     ModerationActionSpec("flag_start", "Flag Start", "Flaggenrunde starten", "manage_channels"),
     ModerationActionSpec("news_send", "News Send", "Neueste News senden", "manage_guild"),
     ModerationActionSpec("youtube_send", "YouTube Send", "Neueste YouTube-News senden", "manage_guild"),
+    ModerationActionSpec("nebu_send", "Nebu Send", "Nebuliton-Sponsorpanel senden", "manage_guild"),
     ModerationActionSpec("guide_build", "Guide Build", "Server-Guide bauen", "manage_guild"),
 )
 
