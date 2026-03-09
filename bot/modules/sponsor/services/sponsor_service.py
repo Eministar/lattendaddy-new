@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import discord
 
-from bot.modules.sponsor.formatting.sponsor_views import build_nebuliton_view
+from bot.modules.sponsor.formatting.sponsor_views import build_nebuliton_embed, build_nebuliton_view
 
 
 class SponsorService:
@@ -16,6 +16,6 @@ class SponsorService:
         channel: discord.TextChannel | discord.Thread,
         guild: discord.Guild | None,
     ) -> discord.Message:
-        view = build_nebuliton_view(self.settings, guild)
-        return await channel.send(view=view)
-
+        embed = build_nebuliton_embed(self.settings, guild)
+        view = build_nebuliton_view()
+        return await channel.send(embed=embed, view=view)
