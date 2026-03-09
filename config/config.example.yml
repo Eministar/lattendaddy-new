@@ -1,4 +1,5 @@
 bot:
+  prefixes: ["!", "*"]
   token: "0"
   forum_channel_id:
   log_forum_channel_id:
@@ -16,6 +17,192 @@ bot:
 logs:
   enabled: true
 
+moderation:
+  enabled: true
+  permissions:
+    ban_role_ids: []
+    ban_user_ids: []
+    kick_role_ids: []
+    kick_user_ids: []
+    timeout_role_ids: []
+    timeout_user_ids: []
+    untimeout_role_ids: []
+    untimeout_user_ids: []
+    mute_role_ids: []
+    mute_user_ids: []
+    warn_role_ids: []
+    warn_user_ids: []
+    unban_role_ids: []
+    unban_user_ids: []
+    softban_role_ids: []
+    softban_user_ids: []
+    purge_role_ids: []
+    purge_user_ids: []
+    slowmode_role_ids: []
+    slowmode_user_ids: []
+    lock_role_ids: []
+    lock_user_ids: []
+    unlock_role_ids: []
+    unlock_user_ids: []
+    nick_role_ids: []
+    nick_user_ids: []
+    role_add_role_ids: []
+    role_add_user_ids: []
+    role_remove_role_ids: []
+    role_remove_user_ids: []
+    mass_timeout_role_ids: []
+    mass_timeout_user_ids: []
+    warns_role_ids: []
+    warns_user_ids: []
+    case_role_ids: []
+    case_user_ids: []
+    note_role_ids: []
+    note_user_ids: []
+    notes_role_ids: []
+    notes_user_ids: []
+    unwarn_role_ids: []
+    unwarn_user_ids: []
+    case_reason_role_ids: []
+    case_reason_user_ids: []
+    clear_notes_role_ids: []
+    clear_notes_user_ids: []
+    say_role_ids: []
+    say_user_ids: []
+    backup_save_role_ids: []
+    backup_save_user_ids: []
+    backup_load_role_ids: []
+    backup_load_user_ids: []
+    backup_list_role_ids: []
+    backup_list_user_ids: []
+    backup_diff_role_ids: []
+    backup_diff_user_ids: []
+    backup_autosave_role_ids: []
+    backup_autosave_user_ids: []
+    ai_reset_limit_role_ids: []
+    ai_reset_limit_user_ids: []
+    application_ask_role_ids: []
+    application_ask_user_ids: []
+    application_panel_send_role_ids: []
+    application_panel_send_user_ids: []
+    beichte_setup_role_ids: []
+    beichte_setup_user_ids: []
+    beichte_panel_role_ids: []
+    beichte_panel_user_ids: []
+    beichte_close_role_ids: []
+    beichte_close_user_ids: []
+    beichte_open_role_ids: []
+    beichte_open_user_ids: []
+    beichte_delete_role_ids: []
+    beichte_delete_user_ids: []
+    beichte_who_role_ids: []
+    beichte_who_user_ids: []
+    roles_sync_role_ids: []
+    roles_sync_user_ids: []
+    roles_rescan_role_ids: []
+    roles_rescan_user_ids: []
+    roles_mass_add_role_ids: []
+    roles_mass_add_user_ids: []
+    roles_panel_send_role_ids: []
+    roles_panel_send_user_ids: []
+    roles_debug_role_ids: []
+    roles_debug_user_ids: []
+    flag_setup_role_ids: []
+    flag_setup_user_ids: []
+    flag_panel_role_ids: []
+    flag_panel_user_ids: []
+    flag_kingrole_role_ids: []
+    flag_kingrole_user_ids: []
+    flag_start_role_ids: []
+    flag_start_user_ids: []
+    news_send_role_ids: []
+    news_send_user_ids: []
+    youtube_send_role_ids: []
+    youtube_send_user_ids: []
+    guide_build_role_ids: []
+    guide_build_user_ids: []
+    application_decide_role_ids: []
+    application_decide_user_ids: []
+    suggestion_panel_send_role_ids: []
+    suggestion_panel_send_user_ids: []
+    suggestion_status_role_ids: []
+    suggestion_status_user_ids: []
+    suggestion_response_role_ids: []
+    suggestion_response_user_ids: []
+    ticket_claim_role_ids: []
+    ticket_claim_user_ids: []
+    ticket_note_role_ids: []
+    ticket_note_user_ids: []
+    ticket_close_role_ids: []
+    ticket_close_user_ids: []
+    ticket_add_role_ids: []
+    ticket_add_user_ids: []
+    ticket_reopen_role_ids: []
+    ticket_reopen_user_ids: []
+    ticket_status_role_ids: []
+    ticket_status_user_ids: []
+    ticket_priority_role_ids: []
+    ticket_priority_user_ids: []
+    ticket_escalate_role_ids: []
+    ticket_escalate_user_ids: []
+    ticket_category_role_ids: []
+    ticket_category_user_ids: []
+    ticket_transcript_role_ids: []
+    ticket_transcript_user_ids: []
+    ticket_forward_role_ids: []
+    ticket_forward_user_ids: []
+    ticket_support_panel_role_ids: []
+    ticket_support_panel_user_ids: []
+    ticket_snippet_list_role_ids: []
+    ticket_snippet_list_user_ids: []
+    ticket_snippet_send_role_ids: []
+    ticket_snippet_send_user_ids: []
+    giveaway_create_role_ids: []
+    giveaway_create_user_ids: []
+    giveaway_reroll_role_ids: []
+    giveaway_reroll_user_ids: []
+    poll_create_role_ids: []
+    poll_create_user_ids: []
+    poll_close_role_ids: []
+    poll_close_user_ids: []
+    parliament_start_vote_role_ids: []
+    parliament_start_vote_user_ids: []
+    parliament_stop_vote_role_ids: []
+    parliament_stop_vote_user_ids: []
+    parliament_panel_role_ids: []
+    parliament_panel_user_ids: []
+    parliament_party_panel_role_ids: []
+    parliament_party_panel_user_ids: []
+    parliament_party_approve_role_ids: []
+    parliament_party_approve_user_ids: []
+    parliament_party_reject_role_ids: []
+    parliament_party_reject_user_ids: []
+    parliament_party_list_role_ids: []
+    parliament_party_list_user_ids: []
+    seelsorge_setup_role_ids: []
+    seelsorge_setup_user_ids: []
+    seelsorge_panel_role_ids: []
+    seelsorge_panel_user_ids: []
+    seelsorge_close_role_ids: []
+    seelsorge_close_user_ids: []
+    seelsorge_open_role_ids: []
+    seelsorge_open_user_ids: []
+    seelsorge_delete_role_ids: []
+    seelsorge_delete_user_ids: []
+    seelsorge_who_role_ids: []
+    seelsorge_who_user_ids: []
+    wort_setup_role_ids: []
+    wort_setup_user_ids: []
+    wort_panel_role_ids: []
+    wort_panel_user_ids: []
+    wort_accept_role_ids: []
+    wort_accept_user_ids: []
+    wort_reject_role_ids: []
+    wort_reject_user_ids: []
+
+automod:
+  enabled: true
+  blacklist: []
+
 
 news:
   enabled: true
@@ -25,6 +212,26 @@ news:
   api_url: "https://www.tagesschau.de/api2u/news"
   last_posted_id:
   last_posted_at:
+
+flags:
+  enabled: true
+  king_role_id: 0
+  round_cooldown_seconds: 5
+  blacklist:
+    - "AQ"
+    - "BV"
+    - "HM"
+    - "TF"
+    - "UM"
+  repeat_protection:
+    last_n: 15
+  points:
+    normal: 10
+    easy: 2
+    daily: 15
+    max_gain_per_round: 100
+  bet:
+    max_wager_points: 50
 
 
 ticket:
@@ -109,6 +316,23 @@ applications:
     - "Wie alt bist du?"
     - "Was sind deine Stärken?"
     - "Wann hast du Zeit?"
+
+parlament:
+  enabled: true
+  panel_channel_id: 0
+  panel_message_id: 0
+  vote_channel_id: 0
+  candidate_role_id: 0
+  member_role_id: 0
+  member_role_exempt_user_ids: []
+  member_role_exempt_role_ids: []
+  fixed_member_user_ids: []
+  parties:
+    request_channel_id: 0
+    panel_channel_id: 0
+    forum_channel_id: 0
+    category_prefix: "🏛️ Partei"
+    team_role_ids: []
 
 user_stats:
   enabled: true
@@ -401,6 +625,7 @@ reminder_afk:
   max_days: 365
   afk_notice_cooldown_seconds: 25
   afk_set_grace_seconds: 6
+  afk_extend_default: "30m"
 
 giveaway:
   enabled: true

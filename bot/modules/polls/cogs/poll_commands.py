@@ -1,6 +1,8 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+from bot.modules.moderation.services.permission_service import PermissionService
 from bot.modules.polls.services.poll_service import PollService
 
 
@@ -8,21 +10,28 @@ class PollCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.service = getattr(bot, "poll_service", None) or PollService(bot, bot.settings, bot.db, bot.logger)
+        self.permission_service = PermissionService(bot.settings, bot.db)
 
     poll = app_commands.Group(name="poll", description="📊 𑁉 Umfrage-Tools")
 
     @poll.command(name="create", description="🗳️ 𑁉 Umfrage erstellen")
     @app_commands.describe(channel="Zielkanal")
     async def create(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        if not interaction.guild:
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "poll_create")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await interaction.response.send_modal(PollCreateModal(self.service, channel.id))
 
     @poll.command(name="close", description="⏹️ 𑁉 Umfrage manuell schließen")
     @app_commands.describe(poll_id="Umfrage ID")
     async def close(self, interaction: discord.Interaction, poll_id: int):
-        if not interaction.guild:
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "poll_close")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         ok, err = await self.service.close_poll(interaction.guild, int(poll_id))
         if not ok:
             messages = {

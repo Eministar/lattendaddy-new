@@ -2,15 +2,16 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.modules.moderation.services.permission_service import PermissionService
 from bot.modules.tickets.services.ticket_service import TicketService
 from bot.modules.tickets.views.support_panel import SupportPanelView
-from bot.core.perms import is_staff
 
 
 class TicketCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.service = getattr(bot, "ticket_service", None) or TicketService(bot, bot.settings, bot.db, bot.logger)
+        self.permission_service = PermissionService(bot.settings, bot.db)
 
     ticket = app_commands.Group(name="ticket", description="🎫 𑁉 Ticket-Tools")
     support_panel = app_commands.Group(name="supportpanel", description="🛟 𑁉 Support-Panel")
@@ -19,16 +20,18 @@ class TicketCommands(commands.Cog):
     async def claim(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "ticket_claim")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await self.service.toggle_claim(interaction)
 
     @ticket.command(name="schliessen", description="🔒 𑁉 Ticket schließen")
     async def close(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "ticket_close")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await interaction.response.send_message('Nutze bitte den Button "Ticket schließen" im Embed.', ephemeral=True)
 
     @app_commands.command(name="ticket-add", description="➕ 𑁉 User zum Ticket hinzufügen")
@@ -36,8 +39,9 @@ class TicketCommands(commands.Cog):
     async def ticket_add(self, interaction: discord.Interaction, user: discord.User):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "ticket_add")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await self.service.add_participant(interaction, user)
 
     @ticket.command(name="reopen", description="🔓 𑁉 Ticket wieder öffnen")
@@ -84,8 +88,9 @@ class TicketCommands(commands.Cog):
     async def support_panel_send(self, interaction: discord.Interaction, channel: discord.TextChannel | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "ticket_support_panel")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         target = channel or interaction.channel
         if not isinstance(target, discord.abc.Messageable):
             return await interaction.response.send_message("Zielkanal ungültig.", ephemeral=True)

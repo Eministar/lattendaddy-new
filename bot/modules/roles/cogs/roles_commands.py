@@ -1,14 +1,15 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from bot.core.perms import is_staff
 import asyncio
+from bot.modules.moderation.services.permission_service import PermissionService
 from bot.modules.roles.views.roles_info_panel import RolesInfoPanelView
 
 
 class RolesCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.permission_service = PermissionService(bot.settings, bot.db)
 
     roles = app_commands.Group(name="roles", description="🧩 𑁉 Rollen-Tools")
     roll = app_commands.Group(name="roll", description="🧩 𑁉 Rollen-Bereich")
@@ -64,8 +65,11 @@ class RolesCommands(commands.Cog):
 
     @roles.command(name="sync", description="🔄 𑁉 Auto-Rollen syncen")
     async def sync(self, interaction: discord.Interaction):
-        if not interaction.guild:
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "roles_sync")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await interaction.response.send_message("Rollen-Sync läuft…", ephemeral=True)
         try:
             if getattr(self.bot, "user_stats_service", None):
@@ -80,8 +84,9 @@ class RolesCommands(commands.Cog):
     async def rescan(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Berechtigung.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "roles_rescan")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await interaction.response.send_message("Rescan läuft… (kann etwas dauern)", ephemeral=True)
         try:
             if not getattr(self.bot, "user_stats_service", None):
@@ -104,8 +109,9 @@ class RolesCommands(commands.Cog):
     async def mass_add(self, interaction: discord.Interaction, role: discord.Role):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Berechtigung.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "roles_mass_add")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await interaction.response.send_message("Mass-Role läuft…", ephemeral=True)
         added = 0
         failed = 0
@@ -130,8 +136,9 @@ class RolesCommands(commands.Cog):
     async def roll_info_panel_send(self, interaction: discord.Interaction, channel: discord.TextChannel | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Berechtigung.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "roles_panel_send")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         target = channel or interaction.channel
         if not isinstance(target, discord.abc.Messageable):
             return await interaction.response.send_message("Zielkanal ungültig.", ephemeral=True)
@@ -142,8 +149,9 @@ class RolesCommands(commands.Cog):
     async def roll_info_debug(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Berechtigung.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "roles_debug")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
 
         guild = interaction.guild
         team_source, team_ids = self._resolve_role_info_ids(guild.id, "team")

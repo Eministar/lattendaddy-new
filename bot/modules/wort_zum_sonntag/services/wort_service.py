@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import discord
 
 from bot.core.perms import is_staff
+from bot.modules.moderation.services.permission_service import PermissionService
 from bot.modules.wort_zum_sonntag.formatting.wort_views import build_submission_view
 from bot.modules.wort_zum_sonntag.views.info import WortInfoView
 from bot.modules.wort_zum_sonntag.views.panel import WortPanelView
@@ -50,6 +51,7 @@ class WortZumSonntagService:
         self.settings = settings
         self.db = db
         self.logger = logger
+        self.permission_service = PermissionService(settings, db)
 
     def _gi(self, guild_id: int, key: str, default: int = 0) -> int:
         return int(self.settings.get_guild_int(guild_id, key, default))
@@ -222,8 +224,10 @@ class WortZumSonntagService:
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
         if not isinstance(interaction.channel, discord.Thread):
             return await interaction.response.send_message("Nur im Weisheits-Thread nutzbar.", ephemeral=True)
-        if not self._can_review(interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        action = "wort_accept" if str(status) == "accepted" else "wort_reject"
+        err = self.permission_service.action_error(interaction.user, action)
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
 
         row = await self.db.get_wzs_submission_by_thread(interaction.guild.id, interaction.channel.id)
         if not row:

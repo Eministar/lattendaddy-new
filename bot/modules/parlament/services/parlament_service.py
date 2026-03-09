@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from datetime import datetime, timezone
 import discord
 
-from bot.core.perms import is_staff
+from bot.modules.moderation.services.permission_service import PermissionService
 from bot.utils.assets import Banners
 from bot.utils.emojis import em
 from bot.modules.parlament.formatting.parlament_embeds import (
@@ -23,6 +23,7 @@ class ParliamentService:
         self.settings = settings
         self.db = db
         self.logger = logger
+        self.permission_service = PermissionService(settings, db)
 
     def _g(self, guild_id: int, key: str, default=None):
         return self.settings.get_guild(guild_id, key, default)
@@ -212,8 +213,9 @@ class ParliamentService:
     async def start_vote(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "parliament_start_vote")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         if not self._enabled(interaction.guild.id):
             return await interaction.response.send_message("Parlament ist deaktiviert.", ephemeral=True)
 
@@ -293,8 +295,9 @@ class ParliamentService:
     async def stop_vote(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "parliament_stop_vote")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         if not self._enabled(interaction.guild.id):
             return await interaction.response.send_message("Parlament ist deaktiviert.", ephemeral=True)
 
@@ -893,8 +896,11 @@ class ParliamentService:
             pass
 
     async def create_party_panel(self, interaction: discord.Interaction):
-        if not interaction.guild or not is_staff(self.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "parliament_party_panel")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         target = interaction.channel
         if not isinstance(target, (discord.TextChannel, discord.Thread)):
             return await interaction.response.send_message("Nur in Textkanälen nutzbar.", ephemeral=True)
@@ -992,8 +998,9 @@ class ParliamentService:
     async def approve_party(self, interaction: discord.Interaction, party_id: int):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await self._send_ephemeral(interaction, "Nur im Server nutzbar.")
-        if not is_staff(self.settings, interaction.user):
-            return await self._send_ephemeral(interaction, "Keine Rechte.")
+        err = self.permission_service.action_error(interaction.user, "parliament_party_approve")
+        if err:
+            return await self._send_ephemeral(interaction, err)
         if not interaction.response.is_done():
             try:
                 await interaction.response.defer(ephemeral=True, thinking=True)
@@ -1059,8 +1066,9 @@ class ParliamentService:
     async def reject_party(self, interaction: discord.Interaction, party_id: int, reason: str | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "parliament_party_reject")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
 
         party_row = await self.db.get_parliament_party(int(party_id))
         if not party_row:

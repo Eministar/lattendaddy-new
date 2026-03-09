@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from datetime import datetime, timezone, timedelta
 
 from bot.core.perms import is_staff
+from bot.modules.moderation.services.permission_service import PermissionService
 from bot.modules.tickets.views.summary_view import SummaryView
 from bot.modules.tickets.views.rating_view import RatingView
 from bot.modules.tickets.formatting.ticket_embeds import (
@@ -302,6 +303,7 @@ class TicketService:
         self.settings = settings
         self.db = db
         self.logger = logger
+        self.permission_service = PermissionService(settings, db)
 
     def _g(self, guild_id: int, key: str, default=None):
         return self.settings.get_guild(int(guild_id), key, default)
@@ -460,12 +462,18 @@ class TicketService:
         except Exception:
             pass
 
-    async def _resolve_ticket_context(self, interaction: discord.Interaction, allow_closed: bool = False):
+    async def _resolve_ticket_context(
+        self,
+        interaction: discord.Interaction,
+        action: str,
+        allow_closed: bool = False,
+    ):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return None, None, "Nur im Server nutzbar."
 
-        if not is_staff(self.settings, interaction.user):
-            return None, None, "Keine Rechte."
+        err = self.permission_service.action_error(interaction.user, action)
+        if err:
+            return None, None, err
 
         thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
         if not thread:
@@ -929,8 +937,9 @@ class TicketService:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return
 
-        if not is_staff(self.settings, interaction.user):
-            return await _ephemeral(interaction, "Keine Rechte.")
+        err = self.permission_service.action_error(interaction.user, "ticket_claim")
+        if err:
+            return await _ephemeral(interaction, err)
 
         thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
         if not thread:
@@ -1023,8 +1032,9 @@ class TicketService:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return
 
-        if not is_staff(self.settings, interaction.user):
-            return await _ephemeral(interaction, "Keine Rechte.")
+        err = self.permission_service.action_error(interaction.user, "ticket_note")
+        if err:
+            return await _ephemeral(interaction, err)
 
         thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
         if not thread:
@@ -1057,8 +1067,9 @@ class TicketService:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return
 
-        if not is_staff(self.settings, interaction.user):
-            return await _ephemeral(interaction, "Keine Rechte.")
+        err = self.permission_service.action_error(interaction.user, "ticket_add")
+        if err:
+            return await _ephemeral(interaction, err)
 
         thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
         if not thread:
@@ -1325,8 +1336,9 @@ class TicketService:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return
 
-        if not is_staff(self.settings, interaction.user):
-            return await _ephemeral(interaction, "Keine Rechte.")
+        err = self.permission_service.action_error(interaction.user, "ticket_close")
+        if err:
+            return await _ephemeral(interaction, err)
 
         thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
         if not thread:
@@ -1436,7 +1448,7 @@ class TicketService:
         )
 
     async def forward_ticket(self, interaction: discord.Interaction, role: discord.Role, reason: str | None):
-        thread, t, err = await self._resolve_ticket_context(interaction)
+        thread, t, err = await self._resolve_ticket_context(interaction, "ticket_forward")
         if err:
             return await _ephemeral(interaction, err)
 
@@ -1492,7 +1504,7 @@ class TicketService:
         )
 
     async def reopen_ticket(self, interaction: discord.Interaction):
-        thread, t, err = await self._resolve_ticket_context(interaction, allow_closed=True)
+        thread, t, err = await self._resolve_ticket_context(interaction, "ticket_reopen", allow_closed=True)
         if err:
             return await _ephemeral(interaction, err)
 
@@ -1550,7 +1562,7 @@ class TicketService:
         )
 
     async def set_status_label(self, interaction: discord.Interaction, label: str):
-        thread, t, err = await self._resolve_ticket_context(interaction)
+        thread, t, err = await self._resolve_ticket_context(interaction, "ticket_status")
         if err:
             return await _ephemeral(interaction, err)
 
@@ -1603,7 +1615,7 @@ class TicketService:
         )
 
     async def set_priority(self, interaction: discord.Interaction, priority: int):
-        thread, t, err = await self._resolve_ticket_context(interaction)
+        thread, t, err = await self._resolve_ticket_context(interaction, "ticket_priority")
         if err:
             return await _ephemeral(interaction, err)
 
@@ -1657,7 +1669,7 @@ class TicketService:
         )
 
     async def escalate_ticket(self, interaction: discord.Interaction, level: int, reason: str | None):
-        thread, t, err = await self._resolve_ticket_context(interaction)
+        thread, t, err = await self._resolve_ticket_context(interaction, "ticket_escalate")
         if err:
             return await _ephemeral(interaction, err)
 
@@ -1723,7 +1735,7 @@ class TicketService:
         )
 
     async def change_category(self, interaction: discord.Interaction, category_key: str):
-        thread, t, err = await self._resolve_ticket_context(interaction)
+        thread, t, err = await self._resolve_ticket_context(interaction, "ticket_category")
         if err:
             return await _ephemeral(interaction, err)
 
@@ -1801,7 +1813,7 @@ class TicketService:
         )
 
     async def send_transcript(self, interaction: discord.Interaction, channel: discord.abc.Messageable | None = None):
-        thread, t, err = await self._resolve_ticket_context(interaction, allow_closed=True)
+        thread, t, err = await self._resolve_ticket_context(interaction, "ticket_transcript", allow_closed=True)
         if err:
             return await _ephemeral(interaction, err)
 

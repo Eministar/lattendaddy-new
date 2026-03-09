@@ -1,21 +1,27 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+
 from bot.modules.backup.services.backup_service import BackupService
+from bot.modules.moderation.services.permission_service import PermissionService
 
 
 class BackupCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.service = getattr(bot, "backup_service", None) or BackupService(bot, bot.settings, bot.db, bot.logger)
+        self.permission_service = PermissionService(bot.settings, bot.db)
 
     backup = app_commands.Group(name="backup", description="💾 𑁉 Backup-Tools")
 
     @backup.command(name="save", description="💾 𑁉 Backup speichern")
     @app_commands.describe(name="Optionaler Name des Backups")
     async def save(self, interaction: discord.Interaction, name: str | None = None):
-        if not interaction.guild:
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "backup_save")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await interaction.response.send_message("Backup wird gespeichert…", ephemeral=True)
         backup_id, backup_name = await self.service.create_backup(interaction.guild, name=name)
         await interaction.followup.send(f"Backup gespeichert: `{backup_name}` (ID {backup_id})", ephemeral=True)
@@ -23,8 +29,11 @@ class BackupCommands(commands.Cog):
     @backup.command(name="load", description="📥 𑁉 Backup wiederherstellen")
     @app_commands.describe(name="Backup-Name oder 'latest'")
     async def load(self, interaction: discord.Interaction, name: str = "latest"):
-        if not interaction.guild:
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "backup_load")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await interaction.response.send_message("Backup wird geladen…", ephemeral=True)
         if name == "latest":
             row = await self.bot.db.get_latest_backup(interaction.guild.id)
@@ -37,8 +46,11 @@ class BackupCommands(commands.Cog):
 
     @backup.command(name="list", description="📋 𑁉 Backups auflisten")
     async def list(self, interaction: discord.Interaction):
-        if not interaction.guild:
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "backup_list")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         rows = await self.bot.db.list_backups(interaction.guild.id, limit=20)
         if not rows:
             return await interaction.response.send_message("Keine Backups vorhanden.", ephemeral=True)
@@ -50,8 +62,11 @@ class BackupCommands(commands.Cog):
     @backup.command(name="diff", description="🧭 𑁉 Unterschiede zum Backup")
     @app_commands.describe(name="Backup-Name oder 'latest'")
     async def diff(self, interaction: discord.Interaction, name: str = "latest"):
-        if not interaction.guild:
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "backup_diff")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         if name == "latest":
             row = await self.bot.db.get_latest_backup(interaction.guild.id)
         else:
@@ -74,5 +89,10 @@ class BackupCommands(commands.Cog):
     @backup.command(name="autosave", description="⏱️ 𑁉 Auto-Backup aktivieren/deaktivieren")
     @app_commands.describe(enabled="True/False")
     async def autosave(self, interaction: discord.Interaction, enabled: bool):
-        await self.bot.settings.set_override("backup.auto_save_enabled", bool(enabled))
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "backup_autosave")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
+        await self.bot.settings.set_guild_override(self.bot.db, interaction.guild.id, "backup.auto_save_enabled", bool(enabled))
         await interaction.response.send_message(f"Auto-Save {'aktiviert' if enabled else 'deaktiviert'}.", ephemeral=True)

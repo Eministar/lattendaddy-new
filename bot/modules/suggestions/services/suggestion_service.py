@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import discord
 
 from bot.core.perms import is_staff
+from bot.modules.moderation.services.permission_service import PermissionService
 from bot.modules.suggestions.formatting.suggestion_embeds import (
     build_suggestion_summary_view,
     build_suggestion_thread_info_container,
@@ -51,6 +52,7 @@ class SuggestionService:
         self.settings = settings
         self.db = db
         self.logger = logger
+        self.permission_service = PermissionService(settings, db)
         self._active_submissions: set[tuple[int, int]] = set()
 
     def _gi(self, guild_id: int, key: str, default: int = 0) -> int:
@@ -173,8 +175,9 @@ class SuggestionService:
     async def send_panel(self, interaction: discord.Interaction, forum: discord.ForumChannel | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await self._ephemeral(interaction, "Nur im Server nutzbar.")
-        if not is_staff(self.settings, interaction.user):
-            return await self._ephemeral(interaction, "Keine Rechte.")
+        err = self.permission_service.action_error(interaction.user, "suggestion_panel_send")
+        if err:
+            return await self._ephemeral(interaction, err)
         if forum:
             await self.settings.set_guild_override(self.db, interaction.guild.id, "suggestion.forum_channel_id", int(forum.id))
         forum_channel = forum or await self._resolve_forum(interaction.guild)
@@ -384,8 +387,9 @@ class SuggestionService:
     async def set_status(self, interaction: discord.Interaction, status: str):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await self._ephemeral(interaction, "Nur im Server nutzbar.")
-        if not is_staff(self.settings, interaction.user):
-            return await self._ephemeral(interaction, "Keine Rechte.")
+        err = self.permission_service.action_error(interaction.user, "suggestion_status")
+        if err:
+            return await self._ephemeral(interaction, err)
         if not isinstance(interaction.channel, discord.Thread):
             return await self._ephemeral(interaction, "Nur im Vorschlags-Thread nutzbar.")
 
@@ -405,8 +409,9 @@ class SuggestionService:
     async def set_admin_response(self, interaction: discord.Interaction, text: str):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await self._ephemeral(interaction, "Nur im Server nutzbar.")
-        if not is_staff(self.settings, interaction.user):
-            return await self._ephemeral(interaction, "Keine Rechte.")
+        err = self.permission_service.action_error(interaction.user, "suggestion_response")
+        if err:
+            return await self._ephemeral(interaction, err)
         if not isinstance(interaction.channel, discord.Thread):
             return await self._ephemeral(interaction, "Nur im Vorschlags-Thread nutzbar.")
         row = await self.db.get_suggestion_by_thread(interaction.guild.id, interaction.channel.id)

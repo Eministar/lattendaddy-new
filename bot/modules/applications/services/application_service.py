@@ -1,7 +1,7 @@
 import json
 import time
 import discord
-from bot.core.perms import is_staff
+from bot.modules.moderation.services.permission_service import PermissionService
 from bot.modules.applications.formatting.application_embeds import (
     build_application_embed,
     build_application_container,
@@ -19,6 +19,7 @@ class ApplicationService:
         self.settings = settings
         self.db = db
         self.logger = logger
+        self.permission_service = PermissionService(settings, db)
         self._sessions: dict[int, dict] = {}
         self._followups: dict[int, list[dict]] = {}
         self._recent_dm_users: dict[int, float] = {}
@@ -228,7 +229,7 @@ class ApplicationService:
     async def send_followup_question(self, interaction: discord.Interaction, user: discord.User, question: str):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return False, "guild_only"
-        if not is_staff(self.settings, interaction.user):
+        if self.permission_service.action_error(interaction.user, "application_ask"):
             return False, "no_perms"
         cfg = self._config()
         forum_id = int(cfg.get("forum_channel_id", 0) or 0)
@@ -269,7 +270,7 @@ class ApplicationService:
     async def decide_application(self, interaction: discord.Interaction, app_id: int, accepted: bool):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return False, "guild_only"
-        if not is_staff(self.settings, interaction.user):
+        if self.permission_service.action_error(interaction.user, "application_decide"):
             return False, "no_perms"
         row = await self.db.get_application(int(app_id))
         if not row:

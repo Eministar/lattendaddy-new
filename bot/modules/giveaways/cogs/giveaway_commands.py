@@ -1,6 +1,8 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+from bot.modules.moderation.services.permission_service import PermissionService
 from bot.modules.giveaways.services.giveaway_service import GiveawayService
 
 
@@ -8,21 +10,28 @@ class GiveawayCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.service = getattr(bot, "giveaway_service", None) or GiveawayService(bot, bot.settings, bot.db, bot.logger)
+        self.permission_service = PermissionService(bot.settings, bot.db)
 
     giveaway = app_commands.Group(name="giveaway", description="🎁 𑁉 Giveaway-Tools")
 
     @giveaway.command(name="create", description="🎉 𑁉 Giveaway erstellen")
     @app_commands.describe(channel="Zielkanal", winners="Anzahl Gewinner")
     async def create(self, interaction: discord.Interaction, channel: discord.TextChannel, winners: int):
-        if not interaction.guild:
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "giveaway_create")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await interaction.response.send_modal(GiveawayCreateModal(self.service, channel.id, int(winners)))
 
     @giveaway.command(name="reroll", description="🔁 𑁉 Gewinner neu auslosen")
     @app_commands.describe(giveaway_id="Giveaway ID")
     async def reroll(self, interaction: discord.Interaction, giveaway_id: int):
-        if not interaction.guild:
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "giveaway_reroll")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         ok, err = await self.service.reroll(interaction.guild, int(giveaway_id))
         if not ok:
             return await interaction.response.send_message(f"Reroll fehlgeschlagen: `{err}`", ephemeral=True)

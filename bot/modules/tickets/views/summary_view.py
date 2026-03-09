@@ -1,5 +1,4 @@
 import discord
-from bot.core.perms import is_staff
 
 
 class TeamNoteModal(discord.ui.Modal):
@@ -158,6 +157,18 @@ class CategorySelect(discord.ui.Select):
 
 
 class SummaryView(discord.ui.LayoutView):
+    ACTION_BY_CUSTOM_ID = {
+        "starry:ticket_claim": "ticket_claim",
+        "starry:ticket_note": "ticket_note",
+        "starry:ticket_close": "ticket_close",
+        "starry:ticket_reopen": "ticket_reopen",
+        "starry:ticket_transcript": "ticket_transcript",
+        "starry:ticket_escalate": "ticket_escalate",
+        "starry:ticket_priority": "ticket_priority",
+        "starry:ticket_status": "ticket_status",
+        "starry:ticket_category": "ticket_category",
+    }
+
     def __init__(
         self,
         service,
@@ -282,11 +293,15 @@ class SummaryView(discord.ui.LayoutView):
                 await interaction.followup.send("Nur im Server nutzbar.", ephemeral=True)
             return False
 
-        if not is_staff(self.service.settings, interaction.user):
+        data = getattr(interaction, "data", {}) or {}
+        custom_id = str(data.get("custom_id") or "")
+        action = self.ACTION_BY_CUSTOM_ID.get(custom_id)
+        err = self.service.permission_service.action_error(interaction.user, action) if action else None
+        if err:
             try:
-                await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+                await interaction.response.send_message(err, ephemeral=True)
             except discord.InteractionResponded:
-                await interaction.followup.send("Keine Rechte.", ephemeral=True)
+                await interaction.followup.send(err, ephemeral=True)
             return False
 
         return True

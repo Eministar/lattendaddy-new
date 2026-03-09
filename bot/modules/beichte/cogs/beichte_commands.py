@@ -3,14 +3,15 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.core.perms import is_staff
 from bot.modules.beichte.services.beichte_service import BeichteService
+from bot.modules.moderation.services.permission_service import PermissionService
 
 
 class BeichteCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.service = getattr(bot, "beichte_service", None) or BeichteService(bot, bot.settings, bot.db, bot.logger)
+        self.permission_service = PermissionService(bot.settings, bot.db)
 
     beichte = app_commands.Group(name="beichte", description="🕊️ 𑁉 Beichte")
 
@@ -56,8 +57,9 @@ class BeichteCommands(commands.Cog):
     async def setup(self, interaction: discord.Interaction, forum: discord.ForumChannel):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "beichte_setup")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await self.service.configure(interaction.guild, forum)
         await interaction.response.send_message("Konfiguration gespeichert.", ephemeral=True)
 
@@ -66,8 +68,9 @@ class BeichteCommands(commands.Cog):
     async def panel(self, interaction: discord.Interaction, forum: discord.ForumChannel | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "beichte_panel")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         await self.service.send_panel(interaction, forum)
 
     @beichte.command(name="close", description="🔒 𑁉 Beichte-Thread schließen")
@@ -75,8 +78,9 @@ class BeichteCommands(commands.Cog):
     async def close(self, interaction: discord.Interaction, thread: discord.Thread | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "beichte_close")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
 
         target, error = await self._resolve_thread(interaction, thread)
         if error:
@@ -93,8 +97,9 @@ class BeichteCommands(commands.Cog):
     async def open(self, interaction: discord.Interaction, thread: discord.Thread | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "beichte_open")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
 
         target, error = await self._resolve_thread(interaction, thread)
         if error:
@@ -111,8 +116,9 @@ class BeichteCommands(commands.Cog):
     async def delete(self, interaction: discord.Interaction, thread: discord.Thread | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "beichte_delete")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
 
         target, error = await self._resolve_thread(interaction, thread)
         if error:
@@ -129,8 +135,9 @@ class BeichteCommands(commands.Cog):
     async def who(self, interaction: discord.Interaction, thread: discord.Thread | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "beichte_who")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
 
         target, error = await self._resolve_thread(interaction, thread)
         if error:
@@ -149,4 +156,3 @@ class BeichteCommands(commands.Cog):
             f"**Erstellt:** {created}"
         )
         await interaction.response.send_message(text, ephemeral=True)
-

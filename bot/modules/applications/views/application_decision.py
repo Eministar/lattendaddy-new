@@ -1,7 +1,7 @@
 import re
 import discord
 
-from bot.core.perms import is_staff
+from bot.modules.moderation.services.permission_service import PermissionService
 
 
 async def _handle_decision(interaction: discord.Interaction, app_id: int, accepted: bool):
@@ -9,8 +9,14 @@ async def _handle_decision(interaction: discord.Interaction, app_id: int, accept
         await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
         return False, None
     settings = getattr(interaction.client, "settings", None)
-    if not settings or not is_staff(settings, interaction.user):
+    db = getattr(interaction.client, "db", None)
+    if not settings or not db:
         await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        return False, None
+    permission_service = PermissionService(settings, db)
+    err = permission_service.action_error(interaction.user, "application_decide")
+    if err:
+        await interaction.response.send_message(err, ephemeral=True)
         return False, None
 
     service = getattr(interaction.client, "application_service", None)

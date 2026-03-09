@@ -4,7 +4,7 @@ from discord.ext import commands
 
 from bot.modules.applications.services.application_service import ApplicationService
 from bot.modules.applications.views.application_panel import ApplicationPanelView
-from bot.core.perms import is_staff
+from bot.modules.moderation.services.permission_service import PermissionService
 
 
 class _ApplicationModal(discord.ui.Modal):
@@ -38,6 +38,7 @@ class ApplicationCommands(commands.Cog):
         self.service = getattr(bot, "application_service", None) or ApplicationService(
             bot, bot.settings, bot.db, bot.logger
         )
+        self.permission_service = PermissionService(bot.settings, bot.db)
 
     @app_commands.command(name="bewerbung", description="📝 𑁉 Bewerbung starten")
     async def application_start(self, interaction: discord.Interaction):
@@ -57,8 +58,9 @@ class ApplicationCommands(commands.Cog):
     async def application_ask(self, interaction: discord.Interaction, user: discord.User, frage: str):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "application_ask")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         ok, err = await self.service.send_followup_question(interaction, user, frage)
         if ok:
             return await interaction.response.send_message("Rückfrage gesendet.", ephemeral=True)
@@ -79,8 +81,9 @@ class ApplicationCommands(commands.Cog):
     async def application_panel_send(self, interaction: discord.Interaction, channel: discord.TextChannel | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "application_panel_send")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
         target = channel or interaction.channel
         if not isinstance(target, discord.abc.Messageable):
             return await interaction.response.send_message("Zielkanal ungültig.", ephemeral=True)

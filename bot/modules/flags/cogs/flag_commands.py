@@ -4,14 +4,15 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.core.perms import is_staff
 from bot.modules.flags.formatting.flag_embeds import build_leaderboard_embed, build_streaks_embed
+from bot.modules.moderation.services.permission_service import PermissionService
 
 
 class FlagCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.service = getattr(bot, "flag_quiz_service", None)
+        self.permission_service = PermissionService(bot.settings, bot.db)
 
     flag = app_commands.Group(name="flag", description="🏴 𑁉 Flaggenquiz")
 
@@ -20,8 +21,9 @@ class FlagCommands(commands.Cog):
     async def setup(self, interaction: discord.Interaction, channel: discord.TextChannel | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True, delete_after=30)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True, delete_after=30)
+        err = self.permission_service.action_error(interaction.user, "flag_setup")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True, delete_after=30)
         if not self.service:
             return await interaction.response.send_message("Flag-Service nicht verfügbar.", ephemeral=True, delete_after=30)
         target = channel or interaction.channel
@@ -36,8 +38,9 @@ class FlagCommands(commands.Cog):
     async def panel(self, interaction: discord.Interaction, channel: discord.TextChannel | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True, delete_after=30)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True, delete_after=30)
+        err = self.permission_service.action_error(interaction.user, "flag_panel")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True, delete_after=30)
         if not self.service:
             return await interaction.response.send_message("Flag-Service nicht verfügbar.", ephemeral=True, delete_after=30)
         target = channel or interaction.channel
@@ -52,8 +55,9 @@ class FlagCommands(commands.Cog):
     async def kingrole(self, interaction: discord.Interaction, role: discord.Role):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True, delete_after=30)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True, delete_after=30)
+        err = self.permission_service.action_error(interaction.user, "flag_kingrole")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True, delete_after=30)
         if not self.service:
             return await interaction.response.send_message("Flag-Service nicht verfügbar.", ephemeral=True, delete_after=30)
         await interaction.response.defer(ephemeral=True)
@@ -70,6 +74,9 @@ class FlagCommands(commands.Cog):
     async def start(self, interaction: discord.Interaction, mode: app_commands.Choice[str] | None = None):
         if not interaction.guild or not isinstance(interaction.user, discord.Member) or not isinstance(interaction.channel, discord.TextChannel):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True, delete_after=30)
+        err = self.permission_service.action_error(interaction.user, "flag_start")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True, delete_after=30)
         if not self.service:
             return await interaction.response.send_message("Flag-Service nicht verfügbar.", ephemeral=True, delete_after=30)
         mode_key = str(mode.value) if mode else "normal"

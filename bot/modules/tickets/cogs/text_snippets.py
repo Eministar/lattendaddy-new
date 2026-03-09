@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.core.perms import is_staff
+from bot.modules.moderation.services.permission_service import PermissionService
 from bot.modules.tickets.services.ticket_service import TicketService
 from bot.modules.tickets.formatting.snippet_embeds import build_snippet_embed, build_snippet_list_embed
 from bot.utils.emojis import em
@@ -59,6 +59,7 @@ class TextSnippetsCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.service = getattr(bot, "ticket_service", None) or TicketService(bot, bot.settings, bot.db, bot.logger)
+        self.permission_service = PermissionService(bot.settings, bot.db)
 
     snippets = app_commands.Group(name="text-snippets", description="📝 𑁉 Vorgefertigte Nachrichten")
 
@@ -66,8 +67,9 @@ class TextSnippetsCommands(commands.Cog):
     async def list_snippets(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "ticket_snippet_list")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
 
         data = _load_snippets(self.bot.settings, interaction.guild)
         items = []
@@ -83,8 +85,9 @@ class TextSnippetsCommands(commands.Cog):
     async def send_snippet(self, interaction: discord.Interaction, key: str):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        if not is_staff(self.bot.settings, interaction.user):
-            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "ticket_snippet_send")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
 
         thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
         if not thread:
