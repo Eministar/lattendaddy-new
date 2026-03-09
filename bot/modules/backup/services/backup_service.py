@@ -188,7 +188,7 @@ class BackupService:
                 payload["webhooks"].append(self._webhook_payload(hook))
 
         backup_name = name or datetime.now(timezone.utc).strftime("autosave-%Y%m%d-%H%M")
-        backup_json = json.dumps(payload, ensure_ascii=False)
+        backup_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         backup_id = await self.db.create_backup(guild.id, backup_name, backup_json)
         return backup_id, backup_name
 

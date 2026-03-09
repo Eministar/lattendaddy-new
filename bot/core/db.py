@@ -297,10 +297,11 @@ class Database:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             guild_id INTEGER NOT NULL,
             name TEXT NOT NULL,
-            payload_json TEXT NOT NULL,
+            payload_json LONGTEXT NOT NULL,
             created_at TEXT NOT NULL
         );
         """)
+        await self._ensure_backup_columns()
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_backups_guild ON backups(guild_id, id)")
         await self._conn.execute("""
@@ -843,6 +844,28 @@ class Database:
         await self._ensure_column("tickets", "escalated_level", "INTEGER DEFAULT 0")
         await self._ensure_column("tickets", "escalated_by", "INTEGER")
         await self._ensure_column("tickets", "escalated_at", "TEXT")
+
+    async def _ensure_backup_columns(self):
+        if self._driver != "mysql":
+            return
+        try:
+            cur = await self._conn.execute(
+                """
+                SELECT DATA_TYPE
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'backups' AND COLUMN_NAME = 'payload_json'
+                LIMIT 1;
+                """,
+                (self._mysql_db,),
+            )
+            row = await cur.fetchone()
+            dtype = str(row[0]).lower() if row and row[0] else ""
+            if dtype != "longtext":
+                await self._conn.execute(
+                    "ALTER TABLE backups MODIFY COLUMN payload_json LONGTEXT NOT NULL;"
+                )
+        except Exception:
+            pass
 
     async def _ensure_counting_columns(self):
         await self._ensure_column("counting_states", "last_count_value", "INTEGER")

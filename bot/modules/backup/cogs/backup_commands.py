@@ -23,7 +23,13 @@ class BackupCommands(commands.Cog):
         if err:
             return await interaction.response.send_message(err, ephemeral=True)
         await interaction.response.send_message("Backup wird gespeichert…", ephemeral=True)
-        backup_id, backup_name = await self.service.create_backup(interaction.guild, name=name)
+        try:
+            backup_id, backup_name = await self.service.create_backup(interaction.guild, name=name)
+        except Exception as exc:
+            return await interaction.followup.send(
+                f"Backup fehlgeschlagen: `{type(exc).__name__}: {exc}`",
+                ephemeral=True,
+            )
         await interaction.followup.send(f"Backup gespeichert: `{backup_name}` (ID {backup_id})", ephemeral=True)
 
     @backup.command(name="load", description="📥 𑁉 Backup wiederherstellen")
