@@ -51,39 +51,29 @@ def _hero_container(settings, guild: discord.Guild | None) -> discord.ui.Contain
 
     header = f"**{info} 𑁉 NEBULITON HOSTING • UNSER PARTNER**"
     intro = (
-        f"{arrow2} **Nebuliton Hosting** ist unser offizieller Partner für starke Hosting-Lösungen "
-        "mit fairen Preisen und sauberer Performance.\n"
-        f"{hearts} Wenn du geile Server für einen guten Preis suchst, findest du dort alles "
-        "vom kleinen Projekt bis zur großen Infrastruktur."
+        f"{arrow2} **Nebuliton Hosting** ist unser offizieller Partner für Hosting mit fairen Preisen, "
+        "starker Performance und moderner Infrastruktur.\n"
+        f"{hearts} Wenn du starke Server für einen guten Preis suchst, bist du dort genau richtig."
     )
-    meta = (
+    overview = (
         "┏`🤝` - Offizieller Partner unseres Servers\n"
-        "┣`⚡` - Performance, Stabilität und moderne Infrastruktur\n"
-        "┗`💸` - Starkes Preis-Leistungs-Verhältnis"
+        "┣`⚡` - Stabil, modern und leistungsstark\n"
+        "┗`💸` - Sehr gutes Preis-Leistungs-Verhältnis"
     )
 
     container = discord.ui.Container(accent_colour=_color(settings, guild))
     _add_logo(container)
     container.add_item(discord.ui.TextDisplay(f"{header}\n{intro}"))
     container.add_item(discord.ui.Separator())
-    container.add_item(discord.ui.TextDisplay(f"**Partner-Highlights**\n{meta}"))
-    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**Auf einen Blick**\n{overview}"))
 
     row = discord.ui.ActionRow()
     row.add_item(
         discord.ui.Button(
-            label="Website öffnen",
+            label="Nebuliton besuchen",
             style=discord.ButtonStyle.link,
             url=NEBULITON_URL,
             emoji="🌐",
-        )
-    )
-    row.add_item(
-        discord.ui.Button(
-            label="Logo öffnen",
-            style=discord.ButtonStyle.link,
-            url=NEBULITON_LOGO_URL,
-            emoji="🖼️",
         )
     )
     container.add_item(row)
@@ -93,17 +83,45 @@ def _hero_container(settings, guild: discord.Guild | None) -> discord.ui.Contain
 def _products_container(settings, guild: discord.Guild | None) -> discord.ui.Container:
     chat = em(settings, "chat", guild) or "💬"
 
-    offers = (
-        "┏`🤖` - Discord-Bot Hosting für zuverlässige 24/7-Projekte\n"
-        "┣`🌐` - Webhosting für Websites, Dashboards und Tools\n"
-        "┣`⛏️` - Minecraft Server Hosting für Communitys und Welten\n"
-        "┣`🖥️` - Root Server mit voller Kontrolle und Flexibilität\n"
-        "┣`🧱` - Dedicated Server für maximale Power\n"
-        "┗`🎮` - Neu: Remote Gaming"
+    community = (
+        "┏`🤖` - Discord-Bot Hosting\n"
+        "┣`🌐` - Webhosting\n"
+        "┗`⛏️` - Minecraft Server Hosting"
+    )
+    server = (
+        "┏`🖥️` - Root Server\n"
+        "┣`🧱` - Dedicated Server\n"
+        "┗`🎮` - Remote Gaming"
     )
 
     container = discord.ui.Container(accent_colour=_color(settings, guild))
-    container.add_item(discord.ui.TextDisplay(f"**{chat} 𑁉 HOSTING-ANGEBOT**\n{offers}"))
+    container.add_item(discord.ui.TextDisplay(f"**{chat} 𑁉 HOSTING-ANGEBOT**"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**Für Communitys & Projekte**\n{community}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**Für Power-User & große Setups**\n{server}"))
+    return container
+
+
+def _benefits_container(settings, guild: discord.Guild | None) -> discord.ui.Container:
+    money = em(settings, "money", guild) or "💸"
+
+    why = (
+        "┏`🧩` - Alles an einem Ort statt bei mehreren Anbietern\n"
+        "┣`🚀` - Geeignet für kleine Projekte und große Setups\n"
+        "┣`🛡️` - Stark, wenn dir Stabilität und Performance wichtig sind\n"
+        "┗`🎯` - Ideal für Entwickler, Communitys und Gamer"
+    )
+
+    container = discord.ui.Container(accent_colour=_color(settings, guild))
+    container.add_item(discord.ui.TextDisplay(f"**💡 𑁉 WARUM NEBULITON?**\n{why}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(
+        discord.ui.TextDisplay(
+            f"**{money} 𑁉 PREIS & LEISTUNG**\n"
+            "Wenn du gute Server zu einem fairen Preis willst, ist Nebuliton eine sehr starke Adresse."
+        )
+    )
     return container
 
 
@@ -111,22 +129,24 @@ def _cta_container(settings, guild: discord.Guild | None) -> discord.ui.Containe
     money = em(settings, "money", guild) or "💸"
     arrow2 = em(settings, "arrow2", guild) or "»"
 
-    why = (
-        "┏`🧩` - Ideal für Discord-Communitys, Entwickler und Gamer\n"
-        "┣`🚀` - Geeignet für kleine Projekte und große Setups\n"
-        "┣`🛡️` - Eine starke Option, wenn dir Stabilität wichtig ist\n"
-        "┗`🎯` - Alles an einem Ort statt bei fünf verschiedenen Hostern"
-    )
     closing = (
-        f"{money} Ob Bot Hosting, Webhosting, Minecraft, Root Server, Dedicated Server "
-        "oder das neue Remote Gaming: Bei **Nebuliton** bekommst du die volle Auswahl.\n"
-        f"{arrow2} Jetzt entdecken: {NEBULITON_URL}"
+        f"{money} Ob Bot Hosting, Webhosting, Minecraft, Root Server, Dedicated Server oder "
+        "Remote Gaming: Bei **Nebuliton** findest du das passende Setup.\n"
+        f"{arrow2} Mehr Infos direkt auf der Website."
     )
 
     container = discord.ui.Container(accent_colour=_color(settings, guild))
-    container.add_item(discord.ui.TextDisplay(f"**💡 𑁉 WARUM NEBULITON?**\n{why}"))
-    container.add_item(discord.ui.Separator())
     container.add_item(discord.ui.TextDisplay(f"**{money} 𑁉 JETZT ENTDECKEN**\n{closing}"))
+    row = discord.ui.ActionRow()
+    row.add_item(
+        discord.ui.Button(
+            label="Zur Website",
+            style=discord.ButtonStyle.link,
+            url=NEBULITON_URL,
+            emoji="🌐",
+        )
+    )
+    container.add_item(row)
     return container
 
 
@@ -134,5 +154,6 @@ def build_nebuliton_view(settings, guild: discord.Guild | None) -> discord.ui.La
     view = discord.ui.LayoutView(timeout=None)
     view.add_item(_hero_container(settings, guild))
     view.add_item(_products_container(settings, guild))
+    view.add_item(_benefits_container(settings, guild))
     view.add_item(_cta_container(settings, guild))
     return view

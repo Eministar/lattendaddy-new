@@ -24,6 +24,14 @@ class SponsorCommands(commands.Cog):
             return channel
         return None
 
+    @staticmethod
+    async def _delete_invocation_message(ctx: commands.Context):
+        try:
+            if ctx.message:
+                await ctx.message.delete()
+        except Exception:
+            pass
+
     @nebu.command(name="send", description="☁️ 𑁉 Nebuliton-Sponsorpanel senden")
     @app_commands.describe(channel="Optional: Ziel-Channel für das Sponsorpanel")
     async def send(self, interaction: discord.Interaction, channel: discord.TextChannel | None = None):
@@ -55,6 +63,10 @@ class SponsorCommands(commands.Cog):
     async def nebu_prefix(self, ctx: commands.Context):
         if not ctx.guild or not isinstance(ctx.author, discord.Member):
             return
+        err = self.permission_service.action_error(ctx.author, "nebu_send")
+        if err:
+            await self._delete_invocation_message(ctx)
+            return
         await ctx.reply("Nutze `!nebu send` oder `/nebu send`.", mention_author=False)
 
     @nebu_prefix.command(name="send")
@@ -64,18 +76,21 @@ class SponsorCommands(commands.Cog):
 
         err = self.permission_service.action_error(ctx.author, "nebu_send")
         if err:
-            return await ctx.reply(err, mention_author=False)
+            await self._delete_invocation_message(ctx)
+            return
 
         target = self._target_from_channel(channel) or self._target_from_channel(ctx.channel)
         if not target:
+            await self._delete_invocation_message(ctx)
             return await ctx.reply("Bitte nutze den Command in einem Text-Channel oder Thread.", mention_author=False)
 
         try:
             await self.service.send_nebuliton_panel(target, ctx.guild)
         except discord.Forbidden:
+            await self._delete_invocation_message(ctx)
             return await ctx.reply("Ich kann dort nichts senden.", mention_author=False)
         except discord.HTTPException:
+            await self._delete_invocation_message(ctx)
             return await ctx.reply("Das Sponsorpanel konnte nicht gesendet werden.", mention_author=False)
 
-        await ctx.reply(f"Nebuliton-Panel gesendet in {target.mention}.", mention_author=False)
-
+        await self._delete_invocation_message(ctx)
