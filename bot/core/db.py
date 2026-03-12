@@ -10,9 +10,10 @@ import aiosqlite
 import aiomysql
 
 class _MySQLCursor:
-    def __init__(self, cur, lastrowid=None, lock=None):
+    def __init__(self, cur, lastrowid=None, rowcount=None, lock=None):
         self._cur = cur
         self.lastrowid = lastrowid if lastrowid is not None else (cur.lastrowid if cur else None)
+        self.rowcount = rowcount if rowcount is not None else (cur.rowcount if cur else 0)
         self._lock = lock
         self._lock_released = False
 
@@ -61,16 +62,17 @@ class _MySQLConn:
                     if code == 1061:
                         await cur.close()
                         self._lock.release()
-                        return _MySQLCursor(None)
+                        return _MySQLCursor(None, rowcount=0)
             await cur.close()
             self._lock.release()
             raise
         if normalized.lstrip().upper().startswith("SELECT"):
             return _MySQLCursor(cur, lock=self._lock)
         lastrowid = cur.lastrowid
+        rowcount = cur.rowcount
         await cur.close()
         self._lock.release()
-        return _MySQLCursor(None, lastrowid=lastrowid)
+        return _MySQLCursor(None, lastrowid=lastrowid, rowcount=rowcount)
 
     async def executemany(self, sql: str, seq):
         normalized = self._normalize_sql(sql)
@@ -1842,13 +1844,29 @@ class Database:
         row = await cur.fetchone()
         return int(row[0] if row else 0)
 
-    async def add_achievement(self, guild_id: int, user_id: int, code: str):
+    async def add_achievement(self, guild_id: int, user_id: int, code: str) -> bool:
         unlocked_at = await self.now_iso()
-        await self._conn.execute("""
+        if self._driver == "mysql":
+            cur = await self._conn.execute("""
+            INSERT INTO achievements (guild_id, user_id, code, unlocked_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(guild_id, user_id, code) DO UPDATE SET
+                unlocked_at = unlocked_at;
+            """, (int(guild_id), int(user_id), str(code), unlocked_at))
+            await self._conn.commit()
+            return int(getattr(cur, "rowcount", 0) or 0) == 1
+
+        cur = await self._conn.execute("""
         INSERT OR IGNORE INTO achievements (guild_id, user_id, code, unlocked_at)
         VALUES (?, ?, ?, ?);
         """, (int(guild_id), int(user_id), str(code), unlocked_at))
         await self._conn.commit()
+        rowcount = int(getattr(cur, "rowcount", 0) or 0)
+        try:
+            await cur.close()
+        except Exception:
+            pass
+        return rowcount > 0
 
     async def list_achievements(self, guild_id: int, user_id: int):
         cur = await self._conn.execute("""

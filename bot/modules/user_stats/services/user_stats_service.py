@@ -1,3 +1,4 @@
+import asyncio
 import re
 import json
 import math
@@ -14,6 +15,7 @@ class UserStatsService:
         self.db = db
         self.logger = logger
         self._welcome_re = self._build_welcome_regex()
+        self._achievement_locks: dict[tuple[int, int, str], asyncio.Lock] = {}
 
     def _build_welcome_regex(self):
         patterns = self.settings.get("user_stats.welcome_patterns", None) or [
@@ -578,7 +580,12 @@ class UserStatsService:
                 await self._unlock_achievement(member, code, item)
 
     async def _unlock_achievement(self, member: discord.Member, code: str, item: dict):
-        await self.db.add_achievement(member.guild.id, member.id, code)
+        key = (int(member.guild.id), int(member.id), str(code))
+        lock = self._achievement_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            inserted = await self.db.add_achievement(member.guild.id, member.id, code)
+            if not inserted:
+                return
         role_id = int(item.get("role_id", 0) or 0)
         if role_id:
             role = member.guild.get_role(role_id)
