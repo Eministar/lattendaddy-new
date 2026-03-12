@@ -24,6 +24,8 @@ class ParliamentService:
         self.db = db
         self.logger = logger
         self.permission_service = PermissionService(settings, db)
+        self._panel_message_ids: dict[int, int] = {}
+        self._panel_signatures: dict[int, str] = {}
 
     def _g(self, guild_id: int, key: str, default=None):
         return self.settings.get_guild(guild_id, key, default)
@@ -150,6 +152,98 @@ class ParliamentService:
             options.append((int(cid), label))
         return options
 
+    def _panel_member_signature(
+        self,
+        members: list[discord.Member],
+        stats_map: dict[int, tuple[int, int]],
+    ) -> list[dict]:
+        snapshot = []
+        for member in sorted(members, key=lambda item: int(item.id)):
+            stats = stats_map.get(int(member.id)) or (0, 0)
+            snapshot.append(
+                {
+                    "id": int(member.id),
+                    "name": str(member.display_name),
+                    "status": str(getattr(member, "raw_status", None) or getattr(member, "status", None) or "offline"),
+                    "elected": int(stats[0] or 0),
+                    "candidated": int(stats[1] or 0),
+                }
+            )
+        return snapshot
+
+    def _panel_signature(
+        self,
+        candidates: list[discord.Member],
+        members: list[discord.Member],
+        fixed_members: list[discord.Member],
+        stats_map: dict[int, tuple[int, int]],
+    ) -> str:
+        payload = {
+            "candidates": self._panel_member_signature(candidates, stats_map),
+            "members": self._panel_member_signature(members, stats_map),
+            "fixed_members": self._panel_member_signature(fixed_members, stats_map),
+        }
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    def _extract_component_text(self, components) -> str:
+        parts: list[str] = []
+
+        def _walk(component):
+            content = getattr(component, "content", None)
+            if isinstance(content, str) and content.strip():
+                parts.append(content.strip())
+            for child in getattr(component, "children", []) or []:
+                _walk(child)
+            for child in getattr(component, "components", []) or []:
+                _walk(child)
+
+        for component in components or []:
+            _walk(component)
+        return "\n".join(parts).strip()
+
+    def _is_panel_message(self, message: discord.Message | None) -> bool:
+        if not message or not getattr(message, "author", None) or not getattr(self.bot, "user", None):
+            return False
+        if int(message.author.id) != int(self.bot.user.id):
+            return False
+        text = self._extract_component_text(getattr(message, "components", None))
+        return "PARLAMENT" in text and "STATUS" in text
+
+    async def _find_recent_panel_message(self, channel: discord.TextChannel) -> discord.Message | None:
+        try:
+            async for message in channel.history(limit=25):
+                if self._is_panel_message(message):
+                    return message
+        except Exception:
+            return None
+        return None
+
+    async def _resolve_panel_message(self, channel: discord.TextChannel, message_id: int) -> discord.Message | None:
+        guild_id = int(channel.guild.id)
+        candidate_ids: list[int] = []
+        cached_id = int(self._panel_message_ids.get(guild_id, 0) or 0)
+        if cached_id:
+            candidate_ids.append(cached_id)
+        if message_id and int(message_id) not in candidate_ids:
+            candidate_ids.append(int(message_id))
+
+        for current_id in candidate_ids:
+            try:
+                message = await channel.fetch_message(int(current_id))
+            except Exception:
+                message = None
+            if self._is_panel_message(message):
+                return message
+
+        return await self._find_recent_panel_message(channel)
+
+    async def _remember_panel_message(self, guild_id: int, message_id: int):
+        self._panel_message_ids[int(guild_id)] = int(message_id)
+        try:
+            await self.settings.set_guild_override(self.db, int(guild_id), "parlament.panel_message_id", int(message_id))
+        except Exception:
+            pass
+
     async def update_panel(self, guild: discord.Guild):
         if not guild or not self._enabled(guild.id):
             return
@@ -179,6 +273,30 @@ class ParliamentService:
         user_ids = [int(m.id) for m in candidates] + [int(m.id) for m in members] + [int(m.id) for m in fixed_members]
         rows = await self.db.list_parliament_stats(guild.id, user_ids)
         stats_map = {int(r[1]): (int(r[2]), int(r[3])) for r in rows or []}
+        signature = self._panel_signature(candidates, members, fixed_members, stats_map)
+
+        message_id = int(self._panel_message_ids.get(guild.id, 0) or self._gi(guild.id, "parlament.panel_message_id", 0))
+        msg = await self._resolve_panel_message(channel, message_id)
+        if msg:
+            if int(msg.id) != int(message_id or 0):
+                await self._remember_panel_message(guild.id, int(msg.id))
+            if self._panel_signatures.get(int(guild.id)) == signature:
+                return
+            view = build_parliament_panel_embed(
+                self.settings,
+                guild,
+                candidates,
+                members,
+                stats_map,
+                fixed_members=fixed_members,
+                updated_at=datetime.now(timezone.utc),
+            )
+            try:
+                await msg.edit(view=view)
+                self._panel_signatures[int(guild.id)] = signature
+                return
+            except Exception:
+                return
 
         view = build_parliament_panel_embed(
             self.settings,
@@ -189,24 +307,10 @@ class ParliamentService:
             fixed_members=fixed_members,
             updated_at=datetime.now(timezone.utc),
         )
-
-        message_id = self._gi(guild.id, "parlament.panel_message_id", 0)
-        msg = None
-        if message_id:
-            try:
-                msg = await channel.fetch_message(int(message_id))
-            except Exception:
-                msg = None
-        if msg:
-            try:
-                await msg.edit(view=view)
-                return
-            except Exception:
-                pass
-
         try:
             msg = await channel.send(view=view)
-            await self.settings.set_guild_override(self.db, guild.id, "parlament.panel_message_id", int(msg.id))
+            self._panel_signatures[int(guild.id)] = signature
+            await self._remember_panel_message(guild.id, int(msg.id))
         except Exception:
             pass
 

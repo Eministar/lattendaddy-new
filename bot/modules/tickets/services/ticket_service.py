@@ -29,6 +29,7 @@ from bot.modules.tickets.formatting.ticket_embeds import (
     build_ticket_log_embed,
     build_dm_ticket_forwarded_embed,
 )
+from bot.modules.tickets.views.confirm_view import TicketConfirmView
 from bot.utils.emojis import em
 from bot.utils.assets import Banners
 
@@ -158,6 +159,14 @@ async def _ephemeral(interaction: discord.Interaction, text: str):
         await interaction.response.send_message(text, ephemeral=True)
     except discord.InteractionResponded:
         await interaction.followup.send(text, ephemeral=True)
+
+
+async def _interaction_notice(interaction: discord.Interaction, text: str):
+    kwargs = {"ephemeral": True} if interaction.guild else {}
+    try:
+        await interaction.response.send_message(text, **kwargs)
+    except discord.InteractionResponded:
+        await interaction.followup.send(text, **kwargs)
 
 
 def _normalize_ticket_row(guild_id: int, row):
@@ -304,6 +313,10 @@ class TicketService:
         self.db = db
         self.logger = logger
         self.permission_service = PermissionService(settings, db)
+        self._pending_ticket_requests: dict[tuple[int, int], dict] = {}
+        self._pending_ticket_confirmations: dict[int, tuple[int, int]] = {}
+        self._processed_ticket_request_messages: set[int] = set()
+        self._ticket_request_locks: dict[int, asyncio.Lock] = {}
 
     def _g(self, guild_id: int, key: str, default=None):
         return self.settings.get_guild(int(guild_id), key, default)
@@ -322,6 +335,67 @@ class TicketService:
             4: "Dringend",
         }
         return mapping.get(int(priority or 2), "Normal")
+
+    def _ticket_request_key(self, guild_id: int, user_id: int) -> tuple[int, int]:
+        return int(guild_id), int(user_id)
+
+    def _ticket_category_label(self, guild_id: int, category_key: str) -> str:
+        categories = self._g(guild_id, "categories", {}) or {}
+        cfg = categories.get(str(category_key), {}) or {}
+        label = str(cfg.get("label", category_key) or category_key).strip()
+        return label or str(category_key)
+
+    def _ticket_request_preview(self, message: discord.Message) -> str:
+        text = (message.content or "").strip()
+        if text:
+            return _truncate(text.replace("\n", " "), 180)
+        if message.attachments:
+            return "Nur Anhänge"
+        return "Leere Nachricht"
+
+    def _ticket_attachment_count(self, attachments) -> int:
+        try:
+            return len(list(attachments or []))
+        except Exception:
+            return 0
+
+    def _get_pending_ticket_request(self, guild_id: int, user_id: int) -> dict | None:
+        return self._pending_ticket_requests.get(self._ticket_request_key(guild_id, user_id))
+
+    def _get_pending_ticket_request_by_confirmation(self, message_id: int, user_id: int) -> dict | None:
+        key = self._pending_ticket_confirmations.get(int(message_id))
+        if not key:
+            return None
+        pending = self._pending_ticket_requests.get(key)
+        if not pending or int(pending.get("user_id") or 0) != int(user_id):
+            return None
+        return pending
+
+    def _clear_pending_ticket_request(self, pending: dict | None):
+        if not pending:
+            return
+        key = self._ticket_request_key(int(pending.get("guild_id") or 0), int(pending.get("user_id") or 0))
+        self._pending_ticket_requests.pop(key, None)
+        confirm_message_id = int(pending.get("confirm_message_id") or 0)
+        if confirm_message_id:
+            self._pending_ticket_confirmations.pop(confirm_message_id, None)
+
+    def _build_ticket_confirm_view(
+        self,
+        pending: dict,
+        state: str = "pending",
+        ticket_id: int | None = None,
+    ) -> TicketConfirmView:
+        guild = self.bot.get_guild(int(pending.get("guild_id") or 0))
+        return TicketConfirmView(
+            self,
+            guild=guild,
+            category_label=str(pending.get("category_label") or "Support"),
+            preview_text=str(pending.get("preview_text") or ""),
+            attachment_count=int(pending.get("attachment_count") or 0),
+            state=state,
+            ticket_id=ticket_id,
+        )
 
     async def _resolve_reply_meta(self, message: discord.Message) -> tuple[str | None, str | None]:
         ref = getattr(message, "reference", None)
@@ -640,6 +714,176 @@ class TicketService:
                 candidates.append(guild)
         return candidates
 
+    async def _find_open_ticket_for_user(self, guild_id: int, user_id: int):
+        existing_row = await self.db.get_open_ticket_by_user(int(guild_id), int(user_id))
+        existing = _normalize_open_ticket_row(existing_row)
+        if not existing:
+            participant_row = await self.db.get_open_ticket_by_participant(int(guild_id), int(user_id))
+            existing = _normalize_open_ticket_row(participant_row)
+        return existing
+
+    async def _fetch_ticket_thread(self, guild: discord.Guild, thread_id: int) -> discord.Thread | None:
+        thread = guild.get_thread(int(thread_id))
+        if thread:
+            return thread
+        try:
+            fetched = await self.bot.fetch_channel(int(thread_id))
+            if isinstance(fetched, discord.Thread):
+                return fetched
+        except Exception:
+            return None
+        return None
+
+    async def _queue_ticket_confirmation(self, guild: discord.Guild, dm_message: discord.Message, category_key: str):
+        key = self._ticket_request_key(guild.id, dm_message.author.id)
+        pending = {
+            "guild_id": int(guild.id),
+            "user_id": int(dm_message.author.id),
+            "category_key": str(category_key),
+            "category_label": self._ticket_category_label(guild.id, category_key),
+            "source_message_id": int(dm_message.id),
+            "preview_text": self._ticket_request_preview(dm_message),
+            "attachment_count": self._ticket_attachment_count(dm_message.attachments),
+        }
+        view = self._build_ticket_confirm_view(pending, state="pending")
+        try:
+            confirmation = await dm_message.author.send(view=view)
+        except Exception:
+            try:
+                await dm_message.author.send("Ich konnte dir die Ticket-Bestätigung nicht schicken. Versuch es bitte nochmal.")
+            except Exception:
+                pass
+            return None
+
+        pending["confirm_message_id"] = int(confirmation.id)
+        self._pending_ticket_requests[key] = pending
+        self._pending_ticket_confirmations[int(confirmation.id)] = key
+        return pending
+
+    async def _resolve_pending_source_message(self, interaction: discord.Interaction, pending: dict) -> discord.Message | None:
+        channel = interaction.channel if isinstance(interaction.channel, discord.DMChannel) else None
+        if channel is None:
+            try:
+                channel = await interaction.user.create_dm()
+            except Exception:
+                channel = None
+        if channel is None:
+            return None
+        try:
+            return await channel.fetch_message(int(pending.get("source_message_id") or 0))
+        except Exception:
+            return None
+
+    async def _append_message_to_existing_ticket(
+        self,
+        guild: discord.Guild,
+        existing: dict,
+        source_message: discord.Message,
+    ) -> bool:
+        thread = await self._fetch_ticket_thread(guild, int(existing["thread_id"]))
+        if not thread:
+            return False
+
+        await self._post_user_message(
+            guild,
+            thread,
+            source_message.author,
+            source_message.content,
+            source_message.attachments,
+            source_message=source_message,
+        )
+        try:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await self.db.set_last_user_message(int(existing["ticket_id"]), now_iso)
+        except Exception:
+            pass
+        try:
+            await source_message.author.send(
+                view=build_dm_message_appended_embed(self.settings, guild, int(existing["ticket_id"]))
+            )
+        except Exception:
+            pass
+
+        await self.logger.emit(
+            self.bot,
+            "ticket_user_message_appended",
+            {"ticket_id": int(existing["ticket_id"]), "user_id": source_message.author.id},
+        )
+        return True
+
+    async def confirm_pending_ticket(self, interaction: discord.Interaction):
+        if interaction.guild is not None:
+            return await _interaction_notice(interaction, "Bitte bestätige Tickets nur in der DM.")
+
+        interaction_message_id = int(getattr(getattr(interaction, "message", None), "id", 0) or 0)
+        pending = self._get_pending_ticket_request_by_confirmation(interaction_message_id, interaction.user.id)
+        if not pending:
+            return await _interaction_notice(interaction, "Diese Ticket-Bestätigung ist nicht mehr gültig.")
+
+        source_message_id = int(pending.get("source_message_id") or 0)
+        lock = self._ticket_request_locks.setdefault(source_message_id, asyncio.Lock())
+        async with lock:
+            pending = self._get_pending_ticket_request_by_confirmation(interaction_message_id, interaction.user.id)
+            if not pending:
+                return await _interaction_notice(interaction, "Diese Ticket-Bestätigung ist nicht mehr gültig.")
+            if source_message_id in self._processed_ticket_request_messages:
+                return await _interaction_notice(interaction, "Diese Anfrage wurde bereits verarbeitet.")
+
+            guild = self.bot.get_guild(int(pending.get("guild_id") or 0))
+            if guild is None:
+                self._clear_pending_ticket_request(pending)
+                return await interaction.response.edit_message(view=self._build_ticket_confirm_view(pending, state="expired"))
+
+            source_message = await self._resolve_pending_source_message(interaction, pending)
+            if source_message is None:
+                self._clear_pending_ticket_request(pending)
+                return await interaction.response.edit_message(view=self._build_ticket_confirm_view(pending, state="expired"))
+
+            allow_multi = self._gb(guild.id, "ticket.allow_multiple_open_tickets_per_user", False)
+            existing = await self._find_open_ticket_for_user(guild.id, interaction.user.id)
+            if existing and not allow_multi:
+                appended = await self._append_message_to_existing_ticket(guild, existing, source_message)
+                if not appended:
+                    return await _interaction_notice(
+                        interaction,
+                        "Dein offenes Ticket konnte gerade nicht erreicht werden. Versuch es bitte nochmal.",
+                    )
+                self._processed_ticket_request_messages.add(source_message_id)
+                self._clear_pending_ticket_request(pending)
+                return await interaction.response.edit_message(
+                    view=self._build_ticket_confirm_view(
+                        pending,
+                        state="appended",
+                        ticket_id=int(existing["ticket_id"]),
+                    )
+                )
+
+            ticket_id = await self._create_ticket(guild, source_message, str(pending.get("category_key") or "allgemeine_frage"))
+            if not ticket_id:
+                return await _interaction_notice(interaction, "Ticket konnte gerade nicht erstellt werden. Versuch es bitte nochmal.")
+
+            self._processed_ticket_request_messages.add(source_message_id)
+            self._clear_pending_ticket_request(pending)
+            await interaction.response.edit_message(
+                view=self._build_ticket_confirm_view(
+                    pending,
+                    state="created",
+                    ticket_id=int(ticket_id),
+                )
+            )
+
+    async def cancel_pending_ticket(self, interaction: discord.Interaction):
+        if interaction.guild is not None:
+            return await _interaction_notice(interaction, "Bitte verwalte Ticket-Bestätigungen nur in der DM.")
+
+        interaction_message_id = int(getattr(getattr(interaction, "message", None), "id", 0) or 0)
+        pending = self._get_pending_ticket_request_by_confirmation(interaction_message_id, interaction.user.id)
+        if not pending:
+            return await _interaction_notice(interaction, "Diese Ticket-Bestätigung ist nicht mehr gültig.")
+
+        self._clear_pending_ticket_request(pending)
+        await interaction.response.edit_message(view=self._build_ticket_confirm_view(pending, state="cancelled"))
+
     async def handle_dm(self, message: discord.Message):
         if message.author.bot:
             return
@@ -671,44 +915,26 @@ class TicketService:
         guild_id = guild.id
 
         allow_multi = self._gb(guild_id, "ticket.allow_multiple_open_tickets_per_user", False)
-        existing_row = await self.db.get_open_ticket_by_user(guild_id, message.author.id)
-        existing = _normalize_open_ticket_row(existing_row)
-        if not existing:
-            participant_row = await self.db.get_open_ticket_by_participant(guild_id, message.author.id)
-            existing = _normalize_open_ticket_row(participant_row)
+        existing = await self._find_open_ticket_for_user(guild_id, message.author.id)
 
         if existing and not allow_multi:
-            thread = guild.get_thread(int(existing["thread_id"]))
-            if not thread:
-                try:
-                    fetched = await self.bot.fetch_channel(int(existing["thread_id"]))
-                    thread = fetched if isinstance(fetched, discord.Thread) else None
-                except Exception:
-                    thread = None
-
-            if thread:
-                await self._post_user_message(guild, thread, message.author, message.content, message.attachments, source_message=message)
-                try:
-                    now_iso = datetime.now(timezone.utc).isoformat()
-                    await self.db.set_last_user_message(int(existing["ticket_id"]), now_iso)
-                except Exception:
-                    pass
-                try:
-                    await message.author.send(
-                        view=build_dm_message_appended_embed(self.settings, guild, int(existing["ticket_id"]))
-                    )
-                except Exception:
-                    pass
-
-                await self.logger.emit(
-                    self.bot,
-                    "ticket_user_message_appended",
-                    {"ticket_id": int(existing["ticket_id"]), "user_id": message.author.id},
-                )
+            appended = await self._append_message_to_existing_ticket(guild, existing, message)
+            if appended:
                 return
 
+        pending = self._get_pending_ticket_request(guild_id, message.author.id)
+        if pending:
+            try:
+                await message.author.send(
+                    "Für deine letzte Nachricht wartet noch eine Bestätigung. "
+                    "Klicke dort auf `Ticket eröffnen` oder `Abbrechen`."
+                )
+            except Exception:
+                pass
+            return
+
         category_key = self._g(guild_id, "ticket.default_category", "allgemeine_frage")
-        await self._create_ticket(guild, message, str(category_key))
+        await self._queue_ticket_confirmation(guild, message, str(category_key))
 
     async def _create_ticket(self, guild: discord.Guild, dm_message: discord.Message, category_key: str):
         forum_id = self._gi(guild.id, "bot.forum_channel_id")
@@ -724,7 +950,7 @@ class TicketService:
                 await dm_message.author.send("Forum-Channel nicht gefunden. Bitte melde dich beim Team.")
             except Exception:
                 pass
-            return
+            return None
 
         user = dm_message.author
         member = guild.get_member(user.id)
@@ -781,7 +1007,7 @@ class TicketService:
                 await self.logger.emit(self.bot, "ticket_create_failed", {"user_id": dm_message.author.id, "error": f"{type(e).__name__}: {e}"})
             except Exception:
                 pass
-            return
+            return None
 
         thread = created.thread
         msg = created.message
@@ -824,6 +1050,7 @@ class TicketService:
             "ticket_created",
             {"ticket_id": int(ticket_id), "user_id": user.id, "thread_id": thread.id, "category": category_key},
         )
+        return int(ticket_id)
 
     async def _post_user_message(self, guild: discord.Guild, thread: discord.Thread, user: discord.User, content: str, attachments, source_message: discord.Message | None = None):
         text = (content or "").strip()

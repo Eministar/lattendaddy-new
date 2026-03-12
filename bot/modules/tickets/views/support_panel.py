@@ -20,7 +20,8 @@ class SupportPanelButton(discord.ui.Button):
                 "🧩 𑁉 SUPPORT START\n"
                 "━━━━━━━━━━━━━━━━━━\n"
                 "Schreib mir jetzt kurz dein Anliegen.\n"
-                "Ich erstelle dann automatisch dein Ticket."
+                "Danach schicke ich dir erst eine Bestätigung.\n"
+                "Erst nach deinem Klick öffne ich das Ticket."
             )
             await interaction.response.send_message("Ich habe dir eine DM geschickt.", ephemeral=True)
         except Exception:

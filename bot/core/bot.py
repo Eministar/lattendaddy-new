@@ -10,6 +10,7 @@ from bot.modules.tickets.cogs.text_snippets import TextSnippetsCommands
 from bot.modules.tickets.services.ticket_service import TicketService
 from bot.modules.tickets.views.summary_view import SummaryView
 from bot.modules.tickets.views.rating_view import RatingButton
+from bot.modules.tickets.views.confirm_view import TicketConfirmView
 from bot.modules.user_stats.cogs.user_stats_listener import UserStatsListener
 from bot.modules.user_stats.cogs.user_stats_commands import UserStatsCommands
 from bot.modules.user_stats.services.user_stats_service import UserStatsService
@@ -222,6 +223,7 @@ class StarryBot(commands.Bot):
         await self.add_cog(ApplicationCommands(self))
 
         self.add_view(SummaryView(self.ticket_service, ticket_id=0, status="open"))
+        self.add_view(TicketConfirmView(self.ticket_service, include_container=False))
         self.add_dynamic_items(RatingButton)
         self.add_dynamic_items(ApplicationDecisionButton)
         self.add_view(ApplicationPanelView(self.settings))

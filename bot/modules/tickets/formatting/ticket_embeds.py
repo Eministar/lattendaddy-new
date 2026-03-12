@@ -162,6 +162,73 @@ def build_dm_ticket_created_embed(settings, guild: discord.Guild | None, ticket_
     return _wrap(container)
 
 
+def build_dm_ticket_confirmation_container(
+    settings,
+    guild: discord.Guild | None,
+    category_label: str,
+    preview_text: str | None,
+    attachment_count: int = 0,
+    state: str = "pending",
+    ticket_id: int | None = None,
+):
+    book = em(settings, "book", guild) or "📚"
+    arrow2 = em(settings, "arrow2", guild) or "»"
+    info = em(settings, "info", guild) or "ℹ️"
+    sparkles = em(settings, "sparkles", guild) or "✨"
+    green = em(settings, "green", guild) or "🟢"
+    orange = em(settings, "orange", guild) or "🟠"
+
+    preview = (preview_text or "").strip() or "Kein Text, nur Anhänge."
+    details = (
+        f"┏`🧭` - Bereich: **{category_label}**\n"
+        f"┣`📝` - Vorschau: {preview}\n"
+        f"┗`📎` - Anhänge: **{int(max(0, attachment_count))}**"
+    )
+
+    current_state = str(state or "pending").lower()
+    if current_state == "created":
+        header = f"**{book} 𑁉 SUPPORT-TICKET - ERSTELLT**"
+        intro = f"{arrow2} Dein Ticket wurde gerade eröffnet und ans Team weitergegeben."
+        meta = f"┗`📚` - Ticket-ID: `{int(ticket_id or 0)}`"
+        note = f"{green} Schreib einfach hier weiter. Neue Nachrichten werden automatisch übernommen."
+    elif current_state == "appended":
+        header = f"**{info} 𑁉 SUPPORT-TICKET - AKTUALISIERT**"
+        intro = f"{arrow2} Du hattest bereits ein offenes Ticket. Ich habe deine Nachricht dort ergänzt."
+        meta = f"┗`📚` - Ticket-ID: `{int(ticket_id or 0)}`"
+        note = f"{green} Antworten vom Team bekommst du weiterhin hier in der DM."
+    elif current_state == "cancelled":
+        header = f"**{info} 𑁉 SUPPORT-TICKET - ABBRUCH**"
+        intro = f"{arrow2} Alles gut. Ich habe kein Ticket erstellt."
+        meta = None
+        note = f"{orange} Wenn du doch Hilfe brauchst, schick mir einfach eine neue Nachricht."
+    elif current_state == "expired":
+        header = f"**{info} 𑁉 SUPPORT-TICKET - ABGELAUFEN**"
+        intro = f"{arrow2} Diese Bestätigung ist nicht mehr gültig."
+        meta = None
+        note = f"{orange} Schick dein Anliegen einfach nochmal, dann starte ich den Ablauf neu."
+    else:
+        header = f"**{book} 𑁉 SUPPORT-TICKET - BESTÄTIGUNG**"
+        intro = f"{arrow2} Ich habe dein Anliegen vorbereitet. Bestätige unten, dann eröffne ich dein Ticket."
+        meta = (
+            f"┏`✅` - Button: `Ticket eröffnen`\n"
+            f"┣`📬` - Deine Nachricht wird übernommen\n"
+            f"┗`🧵` - Antworten kommen danach hier per DM"
+        )
+        note = f"{sparkles} Prüfe kurz die Vorschau unten, bevor du bestätigst."
+
+    container = discord.ui.Container(accent_colour=_color(settings, guild))
+    _add_banner(container, Banners.TICKETS_OPENED)
+    container.add_item(discord.ui.TextDisplay(f"{header}\n{intro}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**DEINE ANFRAGE**\n{details}"))
+    if meta:
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(f"**STATUS**\n{meta}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(note))
+    return container
+
+
 def build_dm_message_appended_embed(settings, guild: discord.Guild | None, ticket_id: int):
     arrow2 = em(settings, "arrow2", guild) or "»"
     info = em(settings, "info", guild) or "ℹ️"
