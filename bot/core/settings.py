@@ -97,6 +97,16 @@ class SettingsManager:
             node = node[part]
         return node
 
+    def get_guild_override(self, guild_id: int, dotted: str, default=None):
+        node = self._guild_overrides.get(int(guild_id), {})
+        for part in dotted.split("."):
+            if not isinstance(node, dict):
+                return default
+            if part not in node:
+                return default
+            node = node[part]
+        return node
+
     def get_guild_int(self, guild_id: int, dotted: str, default: int = 0) -> int:
         v = self.get_guild(guild_id, dotted, default)
         try:
@@ -154,6 +164,17 @@ class SettingsManager:
             self._guild_overrides[int(guild_id)] = data
             self._guild_cache.pop(int(guild_id), None)
 
+    async def delete_guild_override(self, db, guild_id: int, path: str) -> bool:
+        async with self._lock:
+            node = deepcopy(self._guild_overrides.get(int(guild_id), {}))
+            changed = self._delete_path(node, str(path))
+            if not changed:
+                return False
+            await db.delete_guild_config(int(guild_id), str(path))
+            self._guild_overrides[int(guild_id)] = node
+            self._guild_cache.pop(int(guild_id), None)
+            return True
+
     def _load_yaml(self, path: str) -> dict:
         if not os.path.exists(path):
             return {}
@@ -186,6 +207,29 @@ class SettingsManager:
                 node[p] = {}
             node = node[p]
         node[parts[-1]] = value
+
+    def _delete_path(self, root: dict, dotted: str) -> bool:
+        parts = [part for part in str(dotted or "").split(".") if part]
+        if not parts:
+            return False
+        node = root
+        stack: list[tuple[dict, str]] = []
+        for part in parts[:-1]:
+            if not isinstance(node, dict) or part not in node or not isinstance(node[part], dict):
+                return False
+            stack.append((node, part))
+            node = node[part]
+        leaf = parts[-1]
+        if not isinstance(node, dict) or leaf not in node:
+            return False
+        del node[leaf]
+        for parent, key in reversed(stack):
+            child = parent.get(key)
+            if isinstance(child, dict) and not child:
+                del parent[key]
+            else:
+                break
+        return True
 
     def _get_guild_merged(self, guild_id: int) -> dict:
         gid = int(guild_id)

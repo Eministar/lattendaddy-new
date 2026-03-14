@@ -57,6 +57,8 @@ MODERATION_ACTIONS: tuple[ModerationActionSpec, ...] = (
     ModerationActionSpec("application_ask", "Application Ask", "Rückfrage zur Bewerbung senden", "manage_guild"),
     ModerationActionSpec("application_decide", "Application Decide", "Bewerbungen annehmen oder ablehnen"),
     ModerationActionSpec("application_panel_send", "Application Panel Send", "Bewerbungs-Panel senden", "manage_guild"),
+    ModerationActionSpec("setup_view", "Setup View", "Setup-Einstellungen ansehen"),
+    ModerationActionSpec("setup_manage", "Setup Manage", "Setup-Einstellungen ändern", "manage_guild"),
     ModerationActionSpec("beichte_setup", "Beichte Setup", "Beichte konfigurieren", "manage_guild"),
     ModerationActionSpec("beichte_panel", "Beichte Panel", "Beichte-Panel senden", "manage_guild"),
     ModerationActionSpec("beichte_close", "Beichte Close", "Beichte-Thread schließen", "manage_threads"),

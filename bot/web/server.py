@@ -6,7 +6,7 @@ import secrets
 import discord
 import httpx
 from datetime import timedelta
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from fastapi import FastAPI, Request, HTTPException, WebSocket
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -504,6 +504,49 @@ class WebServer:
         except Exception:
             return 0
 
+    def dashboard_port(self) -> int:
+        try:
+            return int(self.settings.get("bot.dashboard.port", 8787) or 8787)
+        except Exception:
+            return 8787
+
+    def dashboard_host_raw(self) -> str:
+        return str(self.settings.get("bot.dashboard.host", "0.0.0.0") or "0.0.0.0").strip()
+
+    def dashboard_bind_host(self) -> str:
+        raw = self.dashboard_host_raw()
+        if not raw:
+            return "0.0.0.0"
+        if "://" in raw:
+            parsed = urlparse(raw)
+            host = parsed.hostname or ""
+            if host and host not in {"0.0.0.0", "127.0.0.1", "localhost"}:
+                return "0.0.0.0"
+            return host or "0.0.0.0"
+        return raw
+
+    def dashboard_public_base_url(self) -> str:
+        redirect = str(self.settings.get("bot.dashboard.redirect_uri", "") or "").strip()
+        if redirect:
+            parsed = urlparse(redirect)
+            if parsed.scheme and parsed.netloc:
+                return f"{parsed.scheme}://{parsed.netloc}"
+
+        raw = self.dashboard_host_raw()
+        port = self.dashboard_port()
+        if "://" in raw:
+            parsed = urlparse(raw)
+            scheme = parsed.scheme or "http"
+            host = parsed.hostname or "127.0.0.1"
+            if parsed.port:
+                return f"{scheme}://{host}:{parsed.port}"
+            return f"{scheme}://{host}:{port}"
+
+        host = raw or "127.0.0.1"
+        if host == "0.0.0.0":
+            host = "127.0.0.1"
+        return f"http://{host}:{port}"
+
     def _discord_oauth_url(self) -> str:
         client_id = str(self.settings.get("bot.dashboard.client_id", "") or "").strip()
         redirect = str(self.settings.get("bot.dashboard.redirect_uri", "") or "").strip()
@@ -656,15 +699,29 @@ class WebServer:
             return None
 
     async def start(self):
-        host = self.settings.get("bot.dashboard.host", "0.0.0.0")
-        port = int(self.settings.get("bot.dashboard.port", 8787))
+        host = self.dashboard_bind_host()
+        port = self.dashboard_port()
         config = uvicorn.Config(self.app, host=host, port=port, log_level="warning")
         self._server = uvicorn.Server(config)
         loop = asyncio.get_running_loop()
-        self._task = loop.create_task(self._server.serve())
+        self._task = loop.create_task(self._serve())
+        await asyncio.sleep(0)
+        if self._task.done():
+            exc = self._task.exception()
+            if exc:
+                raise exc
+
+    async def _serve(self):
+        try:
+            await self._server.serve()
+        except SystemExit as exc:
+            raise RuntimeError(f"Dashboard-Start fehlgeschlagen: {exc}") from exc
 
     async def stop(self):
         if self._server:
             self._server.should_exit = True
         if self._task:
-            await self._task
+            try:
+                await self._task
+            except RuntimeError:
+                pass

@@ -2042,6 +2042,13 @@ class Database:
         )
         await self._conn.commit()
 
+    async def delete_guild_config(self, guild_id: int, key: str):
+        await self._conn.execute(
+            "DELETE FROM guild_configs WHERE guild_id = ? AND `key` = ?;",
+            (int(guild_id), str(key)),
+        )
+        await self._conn.commit()
+
     async def count_achievement(self, guild_id: int, code: str):
         cur = await self._conn.execute("""
         SELECT COUNT(*) FROM achievements WHERE guild_id = ? AND code = ?;

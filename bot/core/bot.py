@@ -27,6 +27,8 @@ from bot.modules.custom_roles.cogs.custom_role_commands import CustomRoleCommand
 from bot.modules.server_guide.services.server_guide_service import ServerGuideService
 from bot.modules.server_guide.cogs.server_guide_commands import ServerGuideCommands
 from bot.modules.reminder_afk.services.reminder_afk_service import ReminderAfkService
+from bot.modules.setup.services.setup_service import SetupService
+from bot.modules.setup.cogs.setup_commands import SetupCommands
 from bot.modules.reminder_afk.cogs.reminder_afk_commands import ReminderAfkCommands
 from bot.modules.flags.services.flag_quiz_service import FlagQuizService
 from bot.modules.flags.cogs.flag_commands import FlagCommands
@@ -171,6 +173,7 @@ class StarryBot(commands.Bot):
         self.custom_role_service = CustomRoleService(self, self.settings, self.db, self.logger)
         self.server_guide_service = ServerGuideService(self, self.settings, self.logger)
         self.reminder_afk_service = ReminderAfkService(self, self.settings, self.db, self.logger)
+        self.setup_service = SetupService(self.settings, self.db)
 
         self.forum_logs = ForumLogService(self, self.settings, self.db)
         self._boot_done = False
@@ -206,7 +209,8 @@ class StarryBot(commands.Bot):
         await self.add_cog(CustomRoleCommands(self))
         await self.add_cog(ServerGuideCommands(self))
         await self.add_cog(ReminderAfkCommands(self))
-        console.line("BOOT", "Support-, Moderations- und Utility-Cogs aktiv (13).", color="green")
+        await self.add_cog(SetupCommands(self))
+        console.line("BOOT", "Support-, Moderations- und Utility-Cogs aktiv (14).", color="green")
 
         console.line("BOOT", "Registriere Event-, Community- und Automations-Cogs …", color="cyan")
         await self.add_cog(FlagListener(self))

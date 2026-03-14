@@ -102,9 +102,11 @@ async def main():
     console.section("Service Start", "Dashboard und Discord werden hochgefahren", color="blue")
     web_started_at = perf_counter()
     await web.start()
-    dash_host = settings.get("bot.dashboard.host", "0.0.0.0")
-    dash_port = int(settings.get("bot.dashboard.port", 8787))
-    console.line("WEB", f"Dashboard aktiv auf {dash_host}:{dash_port} ({perf_counter() - web_started_at:.2f}s).", color="green")
+    dash_bind_host = web.dashboard_bind_host()
+    dash_port = web.dashboard_port()
+    dash_public_url = web.dashboard_public_base_url()
+    console.line("WEB", f"Dashboard bindet auf {dash_bind_host}:{dash_port} ({perf_counter() - web_started_at:.2f}s).", color="green")
+    console.line("WEB", f"Dashboard öffentlich unter {dash_public_url}", color="blue")
     console.line("BOOT", "Discord-Gateway-Login startet …", color="cyan")
 
     async def _run_bot():
