@@ -795,6 +795,136 @@ class Database:
             PRIMARY KEY (guild_id, country_code)
         );
         """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS guess_number_guilds (
+            guild_id INTEGER NOT NULL,
+            target_channel_id INTEGER,
+            target_thread_id INTEGER,
+            panel_message_id INTEGER,
+            default_min INTEGER NOT NULL DEFAULT 1,
+            default_max INTEGER NOT NULL DEFAULT 100,
+            round_timeout_seconds INTEGER NOT NULL DEFAULT 180,
+            auto_enabled INTEGER NOT NULL DEFAULT 0,
+            auto_interval_seconds INTEGER NOT NULL DEFAULT 180,
+            rounds_total INTEGER NOT NULL DEFAULT 0,
+            last_winner_id INTEGER,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS guess_number_players (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            total_wins INTEGER NOT NULL DEFAULT 0,
+            weekly_wins INTEGER NOT NULL DEFAULT 0,
+            weekly_key TEXT,
+            monthly_wins INTEGER NOT NULL DEFAULT 0,
+            monthly_key TEXT,
+            total_guesses INTEGER NOT NULL DEFAULT 0,
+            rounds_started INTEGER NOT NULL DEFAULT 0,
+            rounds_closed INTEGER NOT NULL DEFAULT 0,
+            current_streak INTEGER NOT NULL DEFAULT 0,
+            best_streak INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS emoji_quiz_guilds (
+            guild_id INTEGER NOT NULL,
+            target_channel_id INTEGER,
+            target_thread_id INTEGER,
+            panel_message_id INTEGER,
+            auto_enabled INTEGER NOT NULL DEFAULT 0,
+            auto_interval_seconds INTEGER NOT NULL DEFAULT 240,
+            round_timeout_seconds INTEGER NOT NULL DEFAULT 240,
+            enabled_categories_json TEXT,
+            rounds_total INTEGER NOT NULL DEFAULT 0,
+            last_winner_id INTEGER,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS emoji_quiz_players (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            total_points INTEGER NOT NULL DEFAULT 0,
+            weekly_points INTEGER NOT NULL DEFAULT 0,
+            weekly_key TEXT,
+            monthly_points INTEGER NOT NULL DEFAULT 0,
+            monthly_key TEXT,
+            correct INTEGER NOT NULL DEFAULT 0,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            rounds_started INTEGER NOT NULL DEFAULT 0,
+            rounds_closed INTEGER NOT NULL DEFAULT 0,
+            current_streak INTEGER NOT NULL DEFAULT 0,
+            best_streak INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS emoji_quiz_custom_categories (
+            guild_id INTEGER NOT NULL,
+            category_key TEXT NOT NULL,
+            label TEXT NOT NULL,
+            description TEXT,
+            created_by INTEGER NOT NULL,
+            source_submission_id INTEGER,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, category_key)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS emoji_quiz_custom_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            category_key TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            aliases_json TEXT,
+            submitted_by INTEGER NOT NULL,
+            source_submission_id INTEGER,
+            subject_user_id INTEGER,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+        """)
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_emoji_quiz_custom_questions_category ON emoji_quiz_custom_questions(guild_id, category_key, active)")
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS emoji_quiz_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            thread_id INTEGER NOT NULL,
+            message_id INTEGER NOT NULL,
+            submission_type TEXT NOT NULL,
+            status TEXT NOT NULL,
+            category_key TEXT,
+            category_label TEXT,
+            prompt TEXT NOT NULL,
+            answer TEXT,
+            aliases_json TEXT,
+            subject_user_id INTEGER,
+            created_at TEXT NOT NULL,
+            decided_by INTEGER,
+            decided_at TEXT
+        );
+        """)
+        if self._driver == "mysql":
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_emoji_quiz_submissions_thread ON emoji_quiz_submissions(guild_id, thread_id)")
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_emoji_quiz_submissions_status ON emoji_quiz_submissions(guild_id, status(32))")
+        else:
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_emoji_quiz_submissions_thread ON emoji_quiz_submissions(guild_id, thread_id)")
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_emoji_quiz_submissions_status ON emoji_quiz_submissions(guild_id, status)")
 
     async def _ensure_user_stats_columns(self):
         await self._ensure_column("user_stats", "invite_count", "INTEGER NOT NULL DEFAULT 0")
@@ -3512,6 +3642,720 @@ class Database:
             """,
             (int(guild_id), int(limit)),
         )
+        return await cur.fetchall()
+
+    async def get_guess_number_guild(self, guild_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                guild_id,
+                target_channel_id,
+                target_thread_id,
+                panel_message_id,
+                default_min,
+                default_max,
+                round_timeout_seconds,
+                auto_enabled,
+                auto_interval_seconds,
+                rounds_total,
+                last_winner_id,
+                updated_at
+            FROM guess_number_guilds
+            WHERE guild_id = ?
+            LIMIT 1;
+            """,
+            (int(guild_id),),
+        )
+        return await cur.fetchone()
+
+    async def upsert_guess_number_guild(
+        self,
+        guild_id: int,
+        target_channel_id: int | None,
+        target_thread_id: int | None,
+        panel_message_id: int | None,
+        default_min: int,
+        default_max: int,
+        round_timeout_seconds: int,
+        auto_enabled: bool,
+        auto_interval_seconds: int,
+        rounds_total: int,
+        last_winner_id: int | None,
+    ):
+        now = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT INTO guess_number_guilds (
+                guild_id,
+                target_channel_id,
+                target_thread_id,
+                panel_message_id,
+                default_min,
+                default_max,
+                round_timeout_seconds,
+                auto_enabled,
+                auto_interval_seconds,
+                rounds_total,
+                last_winner_id,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET
+                target_channel_id = excluded.target_channel_id,
+                target_thread_id = excluded.target_thread_id,
+                panel_message_id = excluded.panel_message_id,
+                default_min = excluded.default_min,
+                default_max = excluded.default_max,
+                round_timeout_seconds = excluded.round_timeout_seconds,
+                auto_enabled = excluded.auto_enabled,
+                auto_interval_seconds = excluded.auto_interval_seconds,
+                rounds_total = excluded.rounds_total,
+                last_winner_id = excluded.last_winner_id,
+                updated_at = excluded.updated_at;
+            """,
+            (
+                int(guild_id),
+                int(target_channel_id) if target_channel_id else None,
+                int(target_thread_id) if target_thread_id else None,
+                int(panel_message_id) if panel_message_id else None,
+                int(default_min),
+                int(default_max),
+                int(round_timeout_seconds),
+                1 if auto_enabled else 0,
+                int(auto_interval_seconds),
+                int(rounds_total),
+                int(last_winner_id) if last_winner_id else None,
+                now,
+            ),
+        )
+        await self._conn.commit()
+
+    async def get_guess_number_player_stats(self, guild_id: int, user_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                guild_id,
+                user_id,
+                total_wins,
+                weekly_wins,
+                weekly_key,
+                monthly_wins,
+                monthly_key,
+                total_guesses,
+                rounds_started,
+                rounds_closed,
+                current_streak,
+                best_streak,
+                updated_at
+            FROM guess_number_players
+            WHERE guild_id = ? AND user_id = ?
+            LIMIT 1;
+            """,
+            (int(guild_id), int(user_id)),
+        )
+        return await cur.fetchone()
+
+    async def upsert_guess_number_player_stats(
+        self,
+        guild_id: int,
+        user_id: int,
+        total_wins: int,
+        weekly_wins: int,
+        weekly_key: str | None,
+        monthly_wins: int,
+        monthly_key: str | None,
+        total_guesses: int,
+        rounds_started: int,
+        rounds_closed: int,
+        current_streak: int,
+        best_streak: int,
+    ):
+        now = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT INTO guess_number_players (
+                guild_id,
+                user_id,
+                total_wins,
+                weekly_wins,
+                weekly_key,
+                monthly_wins,
+                monthly_key,
+                total_guesses,
+                rounds_started,
+                rounds_closed,
+                current_streak,
+                best_streak,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                total_wins = excluded.total_wins,
+                weekly_wins = excluded.weekly_wins,
+                weekly_key = excluded.weekly_key,
+                monthly_wins = excluded.monthly_wins,
+                monthly_key = excluded.monthly_key,
+                total_guesses = excluded.total_guesses,
+                rounds_started = excluded.rounds_started,
+                rounds_closed = excluded.rounds_closed,
+                current_streak = excluded.current_streak,
+                best_streak = excluded.best_streak,
+                updated_at = excluded.updated_at;
+            """,
+            (
+                int(guild_id),
+                int(user_id),
+                int(total_wins),
+                int(weekly_wins),
+                str(weekly_key) if weekly_key else None,
+                int(monthly_wins),
+                str(monthly_key) if monthly_key else None,
+                int(total_guesses),
+                int(rounds_started),
+                int(rounds_closed),
+                int(current_streak),
+                int(best_streak),
+                now,
+            ),
+        )
+        await self._conn.commit()
+
+    async def list_guess_number_players_top_alltime(self, guild_id: int, limit: int = 10):
+        cur = await self._conn.execute(
+            """
+            SELECT user_id, total_wins, total_guesses, current_streak, best_streak
+            FROM guess_number_players
+            WHERE guild_id = ? AND total_wins > 0
+            ORDER BY total_wins DESC, best_streak DESC, updated_at ASC
+            LIMIT ?;
+            """,
+            (int(guild_id), int(limit)),
+        )
+        return await cur.fetchall()
+
+    async def list_guess_number_players_top_weekly(self, guild_id: int, week_key: str, limit: int = 10):
+        cur = await self._conn.execute(
+            """
+            SELECT user_id, weekly_wins, total_guesses, current_streak, best_streak
+            FROM guess_number_players
+            WHERE guild_id = ? AND weekly_key = ? AND weekly_wins > 0
+            ORDER BY weekly_wins DESC, total_wins DESC, updated_at ASC
+            LIMIT ?;
+            """,
+            (int(guild_id), str(week_key), int(limit)),
+        )
+        return await cur.fetchall()
+
+    async def list_guess_number_players_top_monthly(self, guild_id: int, month_key: str, limit: int = 10):
+        cur = await self._conn.execute(
+            """
+            SELECT user_id, monthly_wins, total_guesses, current_streak, best_streak
+            FROM guess_number_players
+            WHERE guild_id = ? AND monthly_key = ? AND monthly_wins > 0
+            ORDER BY monthly_wins DESC, total_wins DESC, updated_at ASC
+            LIMIT ?;
+            """,
+            (int(guild_id), str(month_key), int(limit)),
+        )
+        return await cur.fetchall()
+
+    async def list_guess_number_players_top_streak(self, guild_id: int, limit: int = 10):
+        cur = await self._conn.execute(
+            """
+            SELECT user_id, current_streak, best_streak, total_wins
+            FROM guess_number_players
+            WHERE guild_id = ?
+            ORDER BY current_streak DESC, best_streak DESC, total_wins DESC
+            LIMIT ?;
+            """,
+            (int(guild_id), int(limit)),
+        )
+        return await cur.fetchall()
+
+    async def count_guess_number_players(self, guild_id: int) -> int:
+        cur = await self._conn.execute(
+            "SELECT COUNT(*) FROM guess_number_players WHERE guild_id = ?;",
+            (int(guild_id),),
+        )
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def get_emoji_quiz_guild(self, guild_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                guild_id,
+                target_channel_id,
+                target_thread_id,
+                panel_message_id,
+                auto_enabled,
+                auto_interval_seconds,
+                round_timeout_seconds,
+                enabled_categories_json,
+                rounds_total,
+                last_winner_id,
+                updated_at
+            FROM emoji_quiz_guilds
+            WHERE guild_id = ?
+            LIMIT 1;
+            """,
+            (int(guild_id),),
+        )
+        return await cur.fetchone()
+
+    async def upsert_emoji_quiz_guild(
+        self,
+        guild_id: int,
+        target_channel_id: int | None,
+        target_thread_id: int | None,
+        panel_message_id: int | None,
+        auto_enabled: bool,
+        auto_interval_seconds: int,
+        round_timeout_seconds: int,
+        enabled_categories_json: str | None,
+        rounds_total: int,
+        last_winner_id: int | None,
+    ):
+        now = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT INTO emoji_quiz_guilds (
+                guild_id,
+                target_channel_id,
+                target_thread_id,
+                panel_message_id,
+                auto_enabled,
+                auto_interval_seconds,
+                round_timeout_seconds,
+                enabled_categories_json,
+                rounds_total,
+                last_winner_id,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET
+                target_channel_id = excluded.target_channel_id,
+                target_thread_id = excluded.target_thread_id,
+                panel_message_id = excluded.panel_message_id,
+                auto_enabled = excluded.auto_enabled,
+                auto_interval_seconds = excluded.auto_interval_seconds,
+                round_timeout_seconds = excluded.round_timeout_seconds,
+                enabled_categories_json = excluded.enabled_categories_json,
+                rounds_total = excluded.rounds_total,
+                last_winner_id = excluded.last_winner_id,
+                updated_at = excluded.updated_at;
+            """,
+            (
+                int(guild_id),
+                int(target_channel_id) if target_channel_id else None,
+                int(target_thread_id) if target_thread_id else None,
+                int(panel_message_id) if panel_message_id else None,
+                1 if auto_enabled else 0,
+                int(auto_interval_seconds),
+                int(round_timeout_seconds),
+                str(enabled_categories_json) if enabled_categories_json is not None else None,
+                int(rounds_total),
+                int(last_winner_id) if last_winner_id else None,
+                now,
+            ),
+        )
+        await self._conn.commit()
+
+    async def get_emoji_quiz_player_stats(self, guild_id: int, user_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                guild_id,
+                user_id,
+                total_points,
+                weekly_points,
+                weekly_key,
+                monthly_points,
+                monthly_key,
+                correct,
+                attempts,
+                rounds_started,
+                rounds_closed,
+                current_streak,
+                best_streak,
+                updated_at
+            FROM emoji_quiz_players
+            WHERE guild_id = ? AND user_id = ?
+            LIMIT 1;
+            """,
+            (int(guild_id), int(user_id)),
+        )
+        return await cur.fetchone()
+
+    async def upsert_emoji_quiz_player_stats(
+        self,
+        guild_id: int,
+        user_id: int,
+        total_points: int,
+        weekly_points: int,
+        weekly_key: str | None,
+        monthly_points: int,
+        monthly_key: str | None,
+        correct: int,
+        attempts: int,
+        rounds_started: int,
+        rounds_closed: int,
+        current_streak: int,
+        best_streak: int,
+    ):
+        now = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT INTO emoji_quiz_players (
+                guild_id,
+                user_id,
+                total_points,
+                weekly_points,
+                weekly_key,
+                monthly_points,
+                monthly_key,
+                correct,
+                attempts,
+                rounds_started,
+                rounds_closed,
+                current_streak,
+                best_streak,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                total_points = excluded.total_points,
+                weekly_points = excluded.weekly_points,
+                weekly_key = excluded.weekly_key,
+                monthly_points = excluded.monthly_points,
+                monthly_key = excluded.monthly_key,
+                correct = excluded.correct,
+                attempts = excluded.attempts,
+                rounds_started = excluded.rounds_started,
+                rounds_closed = excluded.rounds_closed,
+                current_streak = excluded.current_streak,
+                best_streak = excluded.best_streak,
+                updated_at = excluded.updated_at;
+            """,
+            (
+                int(guild_id),
+                int(user_id),
+                int(total_points),
+                int(weekly_points),
+                str(weekly_key) if weekly_key else None,
+                int(monthly_points),
+                str(monthly_key) if monthly_key else None,
+                int(correct),
+                int(attempts),
+                int(rounds_started),
+                int(rounds_closed),
+                int(current_streak),
+                int(best_streak),
+                now,
+            ),
+        )
+        await self._conn.commit()
+
+    async def list_emoji_quiz_players_top_alltime(self, guild_id: int, limit: int = 10):
+        cur = await self._conn.execute(
+            """
+            SELECT user_id, total_points, correct, attempts, current_streak, best_streak
+            FROM emoji_quiz_players
+            WHERE guild_id = ? AND total_points > 0
+            ORDER BY total_points DESC, correct DESC, updated_at ASC
+            LIMIT ?;
+            """,
+            (int(guild_id), int(limit)),
+        )
+        return await cur.fetchall()
+
+    async def list_emoji_quiz_players_top_weekly(self, guild_id: int, week_key: str, limit: int = 10):
+        cur = await self._conn.execute(
+            """
+            SELECT user_id, weekly_points, correct, attempts, current_streak, best_streak
+            FROM emoji_quiz_players
+            WHERE guild_id = ? AND weekly_key = ? AND weekly_points > 0
+            ORDER BY weekly_points DESC, total_points DESC, updated_at ASC
+            LIMIT ?;
+            """,
+            (int(guild_id), str(week_key), int(limit)),
+        )
+        return await cur.fetchall()
+
+    async def list_emoji_quiz_players_top_monthly(self, guild_id: int, month_key: str, limit: int = 10):
+        cur = await self._conn.execute(
+            """
+            SELECT user_id, monthly_points, correct, attempts, current_streak, best_streak
+            FROM emoji_quiz_players
+            WHERE guild_id = ? AND monthly_key = ? AND monthly_points > 0
+            ORDER BY monthly_points DESC, total_points DESC, updated_at ASC
+            LIMIT ?;
+            """,
+            (int(guild_id), str(month_key), int(limit)),
+        )
+        return await cur.fetchall()
+
+    async def list_emoji_quiz_players_top_streak(self, guild_id: int, limit: int = 10):
+        cur = await self._conn.execute(
+            """
+            SELECT user_id, current_streak, best_streak, total_points
+            FROM emoji_quiz_players
+            WHERE guild_id = ?
+            ORDER BY current_streak DESC, best_streak DESC, total_points DESC
+            LIMIT ?;
+            """,
+            (int(guild_id), int(limit)),
+        )
+        return await cur.fetchall()
+
+    async def count_emoji_quiz_players(self, guild_id: int) -> int:
+        cur = await self._conn.execute(
+            "SELECT COUNT(*) FROM emoji_quiz_players WHERE guild_id = ?;",
+            (int(guild_id),),
+        )
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def create_emoji_quiz_submission(
+        self,
+        guild_id: int,
+        user_id: int,
+        thread_id: int,
+        message_id: int,
+        submission_type: str,
+        category_key: str | None,
+        category_label: str | None,
+        prompt: str,
+        answer: str | None = None,
+        aliases_json: str | None = None,
+        subject_user_id: int | None = None,
+    ) -> int:
+        created_at = await self.now_iso()
+        cur = await self._conn.execute(
+            """
+            INSERT INTO emoji_quiz_submissions (
+                guild_id,
+                user_id,
+                thread_id,
+                message_id,
+                submission_type,
+                status,
+                category_key,
+                category_label,
+                prompt,
+                answer,
+                aliases_json,
+                subject_user_id,
+                created_at,
+                decided_by,
+                decided_at
+            )
+            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, NULL, NULL);
+            """,
+            (
+                int(guild_id),
+                int(user_id),
+                int(thread_id),
+                int(message_id),
+                str(submission_type),
+                str(category_key).strip() if category_key else None,
+                str(category_label).strip() if category_label else None,
+                str(prompt),
+                str(answer) if answer is not None else None,
+                str(aliases_json) if aliases_json is not None else None,
+                int(subject_user_id) if subject_user_id else None,
+                created_at,
+            ),
+        )
+        await self._conn.commit()
+        return int(getattr(cur, "lastrowid", 0) or 0)
+
+    async def get_emoji_quiz_submission(self, submission_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                id, guild_id, user_id, thread_id, message_id, submission_type, status,
+                category_key, category_label, prompt, answer, aliases_json,
+                subject_user_id, created_at, decided_by, decided_at
+            FROM emoji_quiz_submissions
+            WHERE id = ?
+            LIMIT 1;
+            """,
+            (int(submission_id),),
+        )
+        return await cur.fetchone()
+
+    async def list_emoji_quiz_submissions(self, guild_id: int, limit: int = 2000):
+        cur = await self._conn.execute(
+            """
+            SELECT id
+            FROM emoji_quiz_submissions
+            WHERE guild_id = ?
+            ORDER BY id ASC
+            LIMIT ?;
+            """,
+            (int(guild_id), int(limit)),
+        )
+        return await cur.fetchall()
+
+    async def get_emoji_quiz_submission_by_thread(self, guild_id: int, thread_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                id, guild_id, user_id, thread_id, message_id, submission_type, status,
+                category_key, category_label, prompt, answer, aliases_json,
+                subject_user_id, created_at, decided_by, decided_at
+            FROM emoji_quiz_submissions
+            WHERE guild_id = ? AND thread_id = ?
+            ORDER BY id DESC
+            LIMIT 1;
+            """,
+            (int(guild_id), int(thread_id)),
+        )
+        return await cur.fetchone()
+
+    async def set_emoji_quiz_submission_status(self, submission_id: int, status: str, actor_id: int | None = None):
+        decided_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            UPDATE emoji_quiz_submissions
+            SET status = ?, decided_by = ?, decided_at = ?
+            WHERE id = ?;
+            """,
+            (
+                str(status),
+                int(actor_id) if actor_id else None,
+                decided_at,
+                int(submission_id),
+            ),
+        )
+        await self._conn.commit()
+
+    async def create_emoji_quiz_custom_category(
+        self,
+        guild_id: int,
+        category_key: str,
+        label: str,
+        description: str | None,
+        created_by: int,
+        source_submission_id: int | None = None,
+    ):
+        created_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT INTO emoji_quiz_custom_categories (
+                guild_id,
+                category_key,
+                label,
+                description,
+                created_by,
+                source_submission_id,
+                active,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+            ON CONFLICT(guild_id, category_key) DO UPDATE SET
+                label = excluded.label,
+                description = excluded.description,
+                created_by = excluded.created_by,
+                source_submission_id = excluded.source_submission_id,
+                active = 1,
+                created_at = excluded.created_at;
+            """,
+            (
+                int(guild_id),
+                str(category_key),
+                str(label),
+                str(description).strip() if description else None,
+                int(created_by),
+                int(source_submission_id) if source_submission_id else None,
+                created_at,
+            ),
+        )
+        await self._conn.commit()
+
+    async def list_emoji_quiz_custom_categories(self, guild_id: int, active_only: bool = True):
+        sql = """
+            SELECT guild_id, category_key, label, description, created_by, source_submission_id, active, created_at
+            FROM emoji_quiz_custom_categories
+            WHERE guild_id = ?
+        """
+        params: tuple[object, ...] = (int(guild_id),)
+        if active_only:
+            sql += " AND active = 1"
+        sql += " ORDER BY label ASC;"
+        cur = await self._conn.execute(sql, params)
+        return await cur.fetchall()
+
+    async def get_emoji_quiz_custom_category(self, guild_id: int, category_key: str):
+        cur = await self._conn.execute(
+            """
+            SELECT guild_id, category_key, label, description, created_by, source_submission_id, active, created_at
+            FROM emoji_quiz_custom_categories
+            WHERE guild_id = ? AND category_key = ?
+            LIMIT 1;
+            """,
+            (int(guild_id), str(category_key)),
+        )
+        return await cur.fetchone()
+
+    async def create_emoji_quiz_custom_question(
+        self,
+        guild_id: int,
+        category_key: str,
+        prompt: str,
+        answer: str,
+        aliases_json: str | None,
+        submitted_by: int,
+        source_submission_id: int | None = None,
+        subject_user_id: int | None = None,
+    ) -> int:
+        created_at = await self.now_iso()
+        cur = await self._conn.execute(
+            """
+            INSERT INTO emoji_quiz_custom_questions (
+                guild_id,
+                category_key,
+                prompt,
+                answer,
+                aliases_json,
+                submitted_by,
+                source_submission_id,
+                subject_user_id,
+                active,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?);
+            """,
+            (
+                int(guild_id),
+                str(category_key),
+                str(prompt),
+                str(answer),
+                str(aliases_json) if aliases_json is not None else None,
+                int(submitted_by),
+                int(source_submission_id) if source_submission_id else None,
+                int(subject_user_id) if subject_user_id else None,
+                created_at,
+            ),
+        )
+        await self._conn.commit()
+        return int(getattr(cur, "lastrowid", 0) or 0)
+
+    async def list_emoji_quiz_custom_questions(self, guild_id: int, category_key: str | None = None, active_only: bool = True):
+        sql = """
+            SELECT id, guild_id, category_key, prompt, answer, aliases_json, submitted_by, source_submission_id, subject_user_id, active, created_at
+            FROM emoji_quiz_custom_questions
+            WHERE guild_id = ?
+        """
+        params: list[object] = [int(guild_id)]
+        if category_key is not None:
+            sql += " AND category_key = ?"
+            params.append(str(category_key))
+        if active_only:
+            sql += " AND active = 1"
+        sql += " ORDER BY id ASC;"
+        cur = await self._conn.execute(sql, tuple(params))
         return await cur.fetchall()
 
     async def get_log_thread(self, guild_id: int, key: str) -> int | None:

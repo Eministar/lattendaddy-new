@@ -82,6 +82,38 @@ class ModerationCommands(commands.Cog):
             except Exception:
                 pass
 
+    async def _resolve_prefix_user(self, ctx: commands.Context, raw: str) -> discord.User | discord.Member | None:
+        probe = str(raw or "").strip()
+        if not probe:
+            return None
+        for converter_cls in (commands.MemberConverter, commands.UserConverter):
+            try:
+                return await converter_cls().convert(ctx, probe)
+            except commands.CommandError:
+                continue
+        return None
+
+    def _parse_prefix_ban_args(self, raw: str) -> tuple[str, int, str | None]:
+        text = str(raw or "").strip()
+        if not text:
+            return "", 0, None
+        head, _, tail = text.partition(" ")
+        delete_days = 0
+        reason: str | None = None
+        remainder = tail.strip()
+        if remainder:
+            first, _, rest = remainder.partition(" ")
+            if first.isdigit():
+                parsed = int(first)
+                if 0 <= parsed <= 7:
+                    delete_days = parsed
+                    reason = rest.strip() or None
+                else:
+                    reason = remainder or None
+            else:
+                reason = remainder or None
+        return head.strip(), delete_days, reason
+
     def _cfg_role_ids(self, guild_id: int, action: str) -> set[int]:
         return self.permission_service.action_role_ids(guild_id, action)
 
@@ -1078,12 +1110,18 @@ class ModerationCommands(commands.Cog):
         await self._ctx_reply(ctx, f"{user.mention} wurde gekickt. Case: `{case_id}`")
 
     @commands.command(name="ban")
-    async def p_ban(self, ctx: commands.Context, user: discord.User, delete_days: int = 0, *, reason: str | None = None):
+    async def p_ban(self, ctx: commands.Context, *, user_and_reason: str):
         if not self._need_ctx(ctx):
             return
         err = self._action_error(ctx.author, "ban")
         if err:
             return await self._ctx_reply(ctx, err)
+        user_token, delete_days, reason = self._parse_prefix_ban_args(user_and_reason)
+        if not user_token:
+            return await self._ctx_reply(ctx, "Nutze: `!ban <user|id> [delete_days 0-7] [grund]`")
+        user = await self._resolve_prefix_user(ctx, user_token)
+        if not user:
+            return await self._ctx_reply(ctx, f"User nicht gefunden: `{user_token}`")
         ok, err, dd, case_id = await self.service.ban(ctx.guild, ctx.author, user, delete_days, reason)
         if not ok:
             return await self._ctx_reply(ctx, f"Ban ging nicht: {err}")

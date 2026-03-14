@@ -114,6 +114,30 @@ moderation:
     flag_kingrole_user_ids: []
     flag_start_role_ids: []
     flag_start_user_ids: []
+    guess_setup_role_ids: []
+    guess_setup_user_ids: []
+    guess_panel_role_ids: []
+    guess_panel_user_ids: []
+    guess_start_role_ids: []
+    guess_start_user_ids: []
+    guess_stop_role_ids: []
+    guess_stop_user_ids: []
+    guess_auto_role_ids: []
+    guess_auto_user_ids: []
+    emoji_quiz_setup_role_ids: []
+    emoji_quiz_setup_user_ids: []
+    emoji_quiz_panel_role_ids: []
+    emoji_quiz_panel_user_ids: []
+    emoji_quiz_start_role_ids: []
+    emoji_quiz_start_user_ids: []
+    emoji_quiz_stop_role_ids: []
+    emoji_quiz_stop_user_ids: []
+    emoji_quiz_auto_role_ids: []
+    emoji_quiz_auto_user_ids: []
+    emoji_quiz_accept_role_ids: []
+    emoji_quiz_accept_user_ids: []
+    emoji_quiz_reject_role_ids: []
+    emoji_quiz_reject_user_ids: []
     news_send_role_ids: []
     news_send_user_ids: []
     youtube_send_role_ids: []
@@ -234,6 +258,34 @@ flags:
     max_gain_per_round: 100
   bet:
     max_wager_points: 50
+
+guess_number:
+  enabled: true
+  guess_cooldown_seconds: 0
+  hint_messages: true
+  default_min: 1
+  default_max: 100
+  round_timeout_seconds: 180
+  auto_interval_seconds: 180
+
+emoji_quiz:
+  enabled: true
+  review_forum_channel_id: 0
+  round_timeout_seconds: 240
+  auto_interval_seconds: 240
+  points_per_win: 10
+  enabled_categories:
+    - "staedte"
+    - "laender"
+    - "filme"
+    - "serien"
+    - "essen"
+    - "sprichwoerter"
+    - "songs"
+    - "flaggen"
+    - "user"
+    - "spiele"
+    - "maerchen"
 
 
 ticket:

@@ -31,6 +31,10 @@ from bot.modules.flags.services.flag_quiz_service import FlagQuizService
 from bot.modules.flags.cogs.flag_commands import FlagCommands
 from bot.modules.flags.cogs.flag_listener import FlagListener
 from bot.modules.flags.views.flag_dashboard import FlagDashboardPersistentView
+from bot.modules.guess_the_number.services.guess_number_service import GuessNumberService
+from bot.modules.guess_the_number.cogs.guess_number_commands import GuessNumberCommands
+from bot.modules.guess_the_number.cogs.guess_number_listener import GuessNumberListener
+from bot.modules.guess_the_number.views.guess_number_panel import GuessNumberPanelView
 from bot.modules.giveaways.cogs.giveaway_commands import GiveawayCommands
 from bot.modules.giveaways.cogs.giveaway_listener import GiveawayListener
 from bot.modules.giveaways.services.giveaway_service import GiveawayService
@@ -49,6 +53,10 @@ from bot.modules.automod.services.automod_service import AutoModService
 from bot.modules.counting.cogs.counting_listener import CountingListener
 from bot.modules.counting.cogs.counting_commands import CountingCommands
 from bot.modules.counting.services.counting_service import CountingService
+from bot.modules.emoji_quiz.services.emoji_quiz_service import EmojiQuizService
+from bot.modules.emoji_quiz.cogs.emoji_quiz_commands import EmojiQuizCommands
+from bot.modules.emoji_quiz.cogs.emoji_quiz_listener import EmojiQuizListener
+from bot.modules.emoji_quiz.views.emoji_quiz_panel import EmojiQuizPanelView
 from bot.modules.wort_zum_sonntag.cogs.wort_commands import WortCommands
 from bot.modules.wort_zum_sonntag.services.wort_service import WortZumSonntagService
 from bot.modules.wort_zum_sonntag.views.panel import WortPanelView
@@ -150,6 +158,8 @@ class StarryBot(commands.Bot):
         self.deepseek_service = DeepSeekService(self, self.settings, self.logger)
         self.automod_service = AutoModService(self, self.settings, self.db, self.logger)
         self.counting_service = CountingService(self, self.settings, self.db, self.logger)
+        self.guess_number_service = GuessNumberService(self, self.settings, self.db, self.logger)
+        self.emoji_quiz_service = EmojiQuizService(self, self.settings, self.db, self.logger)
         self.suggestion_service = SuggestionService(self, self.settings, self.db, self.logger)
         self.seelsorge_service = SeelsorgeService(self, self.settings, self.db, self.logger)
         self.beichte_service = BeichteService(self, self.settings, self.db, self.logger)
@@ -174,6 +184,8 @@ class StarryBot(commands.Bot):
         self.placeholder_loop.start()
         self.parlament_loop.start()
         self.reminder_loop.start()
+        self.guess_number_loop.start()
+        self.emoji_quiz_loop.start()
 
     async def setup_hook(self):
         await self.add_cog(TicketDMListener(self))
@@ -203,6 +215,10 @@ class StarryBot(commands.Bot):
         await self.add_cog(AICommands(self))
         await self.add_cog(CountingListener(self))
         await self.add_cog(CountingCommands(self))
+        await self.add_cog(GuessNumberListener(self))
+        await self.add_cog(GuessNumberCommands(self))
+        await self.add_cog(EmojiQuizListener(self))
+        await self.add_cog(EmojiQuizCommands(self))
         await self.add_cog(WortCommands(self))
 
         await self.add_cog(FunCommands(self))
@@ -235,6 +251,8 @@ class StarryBot(commands.Bot):
         self.add_view(SeelsorgePanelView(self.seelsorge_service))
         self.add_view(BeichteInfoView(self.beichte_service))
         self.add_view(FlagDashboardPersistentView())
+        self.add_view(GuessNumberPanelView())
+        self.add_view(EmojiQuizPanelView())
         self.add_view(PartyCreatePanelView())
         self.add_view(PartySettingsPanelView())
 
@@ -338,6 +356,22 @@ class StarryBot(commands.Bot):
         except Exception:
             pass
 
+    @tasks.loop(seconds=15.0)
+    async def guess_number_loop(self):
+        try:
+            if self.guess_number_service:
+                await self.guess_number_service.tick()
+        except Exception:
+            pass
+
+    @tasks.loop(seconds=15.0)
+    async def emoji_quiz_loop(self):
+        try:
+            if self.emoji_quiz_service:
+                await self.emoji_quiz_service.tick()
+        except Exception:
+            pass
+
     @reload_settings_loop.error
     async def reload_settings_loop_error(self, error: Exception):
             await self._emit_bot_error("reload_settings_loop", error, extra=None, guild=None)
@@ -378,6 +412,14 @@ class StarryBot(commands.Bot):
     async def reminder_loop_error(self, error: Exception):
             await self._emit_bot_error("reminder_loop", error, extra=None, guild=None)
 
+    @guess_number_loop.error
+    async def guess_number_loop_error(self, error: Exception):
+            await self._emit_bot_error("guess_number_loop", error, extra=None, guild=None)
+
+    @emoji_quiz_loop.error
+    async def emoji_quiz_loop_error(self, error: Exception):
+            await self._emit_bot_error("emoji_quiz_loop", error, extra=None, guild=None)
+
 
     async def on_ready(self):
         if self._boot_done:
@@ -417,6 +459,16 @@ class StarryBot(commands.Bot):
             if self.flag_quiz_service:
                 try:
                     await self.flag_quiz_service.refresh_dashboard(guild)
+                except Exception:
+                    pass
+            if self.guess_number_service:
+                try:
+                    await self.guess_number_service.refresh_dashboard(guild)
+                except Exception:
+                    pass
+            if self.emoji_quiz_service:
+                try:
+                    await self.emoji_quiz_service.refresh_dashboard(guild)
                 except Exception:
                     pass
         if self.poll_service:

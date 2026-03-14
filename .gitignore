@@ -18,7 +18,6 @@ env/
 .env
 
 # Data files (database, logs)
-data/
 !data/.gitkeep
 
 # Config (may contain tokens)
