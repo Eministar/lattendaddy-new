@@ -1,5 +1,6 @@
 import discord
 from datetime import datetime, timezone
+from time import perf_counter
 from discord import app_commands
 from discord.ext import commands, tasks
 
@@ -173,6 +174,7 @@ class StarryBot(commands.Bot):
 
         self.forum_logs = ForumLogService(self, self.settings, self.db)
         self._boot_done = False
+        self._boot_started_at = perf_counter()
 
         self.reload_settings_loop.start()
         self.ticket_automation_loop.start()
@@ -188,6 +190,9 @@ class StarryBot(commands.Bot):
         self.emoji_quiz_loop.start()
 
     async def setup_hook(self):
+        setup_started_at = perf_counter()
+        console.section("Discord Setup", f"Prefixe: {', '.join(self.prefixes)}", color="cyan")
+        console.line("BOOT", "Registriere Support-, Moderations- und Utility-Cogs …", color="cyan")
         await self.add_cog(TicketDMListener(self))
         await self.add_cog(TicketForumListener(self))
         await self.add_cog(TicketCommands(self))
@@ -201,6 +206,9 @@ class StarryBot(commands.Bot):
         await self.add_cog(CustomRoleCommands(self))
         await self.add_cog(ServerGuideCommands(self))
         await self.add_cog(ReminderAfkCommands(self))
+        console.line("BOOT", "Support-, Moderations- und Utility-Cogs aktiv (13).", color="green")
+
+        console.line("BOOT", "Registriere Event-, Community- und Automations-Cogs …", color="cyan")
         await self.add_cog(FlagListener(self))
         await self.add_cog(FlagCommands(self))
         await self.add_cog(GiveawayCommands(self))
@@ -237,7 +245,9 @@ class StarryBot(commands.Bot):
         await self.add_cog(ModLogListener(self))
         await self.add_cog(ChannelRoleLogListener(self))
         await self.add_cog(ApplicationCommands(self))
+        console.line("BOOT", "Event-, Community- und Automations-Cogs aktiv (35).", color="green")
 
+        console.line("BOOT", "Registriere persistente Views und Dynamic Items …", color="cyan")
         self.add_view(SummaryView(self.ticket_service, ticket_id=0, status="open"))
         self.add_view(TicketConfirmView(self.ticket_service, include_container=False))
         self.add_dynamic_items(RatingButton)
@@ -255,14 +265,21 @@ class StarryBot(commands.Bot):
         self.add_view(EmojiQuizPanelView())
         self.add_view(PartyCreatePanelView())
         self.add_view(PartySettingsPanelView())
+        console.line("BOOT", "Persistente Views und Dynamic Items registriert (15 Views, 2 Dynamic Items).", color="green")
 
         @self.tree.error
         async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
             await self._handle_app_command_error(interaction, error)
 
+        sync_started_at = perf_counter()
+        console.line("BOOT", "Synchronisiere App-Commands mit Discord …", color="cyan")
         await self.tree.sync()
+        console.line("BOOT", f"App-Commands synchronisiert ({perf_counter() - sync_started_at:.2f}s).", color="green")
         self.presence = PresenceRotator(self, self.db, interval_seconds=20)
+        presence_started_at = perf_counter()
         self.presence.start()
+        console.line("BOOT", f"Presence-Rotator gestartet ({perf_counter() - presence_started_at:.2f}s).", color="green")
+        console.line("BOOT", f"setup_hook abgeschlossen ({perf_counter() - setup_started_at:.2f}s).", color="green")
 
     @tasks.loop(seconds=2.0)
     async def reload_settings_loop(self):
@@ -426,11 +443,16 @@ class StarryBot(commands.Bot):
             return
         self._boot_done = True
         try:
+            console.section("Discord Ready", f"{len(self.guilds)} Guilds verbunden", color="green")
             console.line("DISCORD", f"Verbunden als {self.user} ({self.user.id})", color="green")
         except Exception:
             pass
+        warmup_started_at = perf_counter()
+        warmup_guilds = 0
+        console.line("BOOT", f"Starte Guild-Warmup für {len(self.guilds)} Server …", color="cyan")
         await self.forum_logs.start()
         for guild in list(self.guilds):
+            warmup_guilds += 1
             if self.user_stats_service:
                 try:
                     await self.user_stats_service.seed_voice_sessions(guild)
@@ -471,23 +493,30 @@ class StarryBot(commands.Bot):
                     await self.emoji_quiz_service.refresh_dashboard(guild)
                 except Exception:
                     pass
+        console.line("BOOT", f"Guild-Warmup abgeschlossen ({warmup_guilds} Server, {perf_counter() - warmup_started_at:.2f}s).", color="green")
+        restore_started_at = perf_counter()
+        restore_jobs = 0
         if self.poll_service:
             try:
                 await self.poll_service.restore_views()
+                restore_jobs += 1
             except Exception:
                 pass
         if self.parlament_service:
             try:
                 await self.parlament_service.restore_views()
+                restore_jobs += 1
             except Exception:
                 pass
         if self.bot_status_service:
             try:
                 await self.bot_status_service.send_start()
+                restore_jobs += 1
             except Exception:
                 pass
         try:
-            console.line("STARTED", "Bot vollständig gestartet und bereit.", color="green")
+            console.line("BOOT", f"Post-Ready-Dienste abgeschlossen ({restore_jobs} Jobs, {perf_counter() - restore_started_at:.2f}s).", color="green")
+            console.line("STARTED", f"Bot vollständig gestartet und bereit ({perf_counter() - self._boot_started_at:.2f}s).", color="green")
         except Exception:
             pass
 

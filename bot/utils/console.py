@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime
 
 
 class Console:
@@ -50,16 +51,28 @@ class Console:
         return f"{seq}{text}{self.RESET}"
 
     def line(self, tag: str, msg: str, color: str = "white"):
-        label = self.style(f"[{tag}]", color=color, bold=True)
-        print(f"{label} {msg}")
+        stamp = self.style(datetime.now().strftime("%H:%M:%S"), "gray", dim=True)
+        label = self.style(f"[{str(tag).upper():<10}]", color=color, bold=True)
+        print(f"{stamp} {label} {msg}")
+
+    def section(self, title: str, subtitle: str | None = None, color: str = "cyan"):
+        width = 74
+        head = f" {str(title).upper()} "
+        tail = f" {subtitle}" if subtitle else ""
+        line = (head + tail).strip()
+        if len(line) > width:
+            line = line[:width]
+        fill = "─" * max(0, width - len(line))
+        print(self.style(f"{line}{fill}", color=color, bold=True, dim=True))
 
     def banner(self, app_name: str = "STARRY"):
-        width = 62
+        width = 70
         top = self.style("╔" + ("═" * width) + "╗", "magenta")
         bot = self.style("╚" + ("═" * width) + "╝", "magenta")
         print(top)
-        title = f" {app_name} BOT BOOT "
-        subtitle = " Design-Start | Module laden | Discord verbinden "
+        title = f" {app_name} BOOT SEQUENCE "
+        subtitle = " Discord Gateway | Dashboard | Automationen | Moderation "
+        footer = " Konfiguration, Dienste und Module werden initialisiert "
         print(
             f"{self.style('║', 'magenta')}"
             f"{self.style(title.center(width), 'cyan', bold=True)}"
@@ -68,6 +81,11 @@ class Console:
         print(
             f"{self.style('║', 'magenta')}"
             f"{self.style(subtitle.center(width), 'gray')}"
+            f"{self.style('║', 'magenta')}"
+        )
+        print(
+            f"{self.style('║', 'magenta')}"
+            f"{self.style(footer.center(width), 'white', dim=True)}"
             f"{self.style('║', 'magenta')}"
         )
         print(bot)

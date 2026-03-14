@@ -2,6 +2,7 @@ import os
 import asyncio
 import signal
 import traceback
+from time import perf_counter
 from dotenv import load_dotenv
 
 from bot.core.settings import SettingsManager
@@ -40,16 +41,19 @@ def _load_token(settings: SettingsManager) -> str:
 
 
 async def main():
+    boot_started_at = perf_counter()
     load_dotenv()
     console.banner("STARRY")
-    console.line("BOOT", "Settings laden …", color="cyan")
+    console.section("Core Boot", "Konfiguration • Datenbank • Web • Discord", color="cyan")
+    console.line("BOOT", "Lese Konfiguration aus config/config.yml und data/settings.json …", color="cyan")
 
     settings = SettingsManager(
         config_path="config/config.yml",
         override_path="data/settings.json",
     )
+    settings_started_at = perf_counter()
     await settings.load()
-    console.line("BOOT", "Settings geladen.", color="green")
+    console.line("BOOT", f"Konfiguration geladen ({perf_counter() - settings_started_at:.2f}s).", color="green")
 
     token = _load_token(settings)
 
@@ -57,15 +61,17 @@ async def main():
     if db_type == "mysql":
         mysql_cfg = settings.get("database.mysql", {}) or {}
         db = Database(mysql=mysql_cfg)
-        console.line("DB", "Treiber: MySQL", color="blue")
+        console.line("DB", "Backend gewählt: MySQL", color="blue")
     else:
         sqlite_path = str(settings.get("database.sqlite_path", "data/starry.db") or "data/starry.db")
         db = Database(path=sqlite_path)
-        console.line("DB", f"Treiber: SQLite ({sqlite_path})", color="blue")
+        console.line("DB", f"Backend gewählt: SQLite ({sqlite_path})", color="blue")
+    db_started_at = perf_counter()
     await db.init()
-    console.line("DB", "Verbindung initialisiert.", color="green")
+    console.line("DB", f"Verbindung initialisiert ({perf_counter() - db_started_at:.2f}s).", color="green")
+    overrides_started_at = perf_counter()
     await settings.load_guild_overrides(db)
-    console.line("BOOT", "Guild-Overrides geladen.", color="green")
+    console.line("BOOT", f"Guild-Overrides geladen ({perf_counter() - overrides_started_at:.2f}s).", color="green")
 
     logger = StarryLogger(settings=settings, db=db)
 
@@ -93,11 +99,13 @@ async def main():
     except Exception:
         pass
 
+    console.section("Service Start", "Dashboard und Discord werden hochgefahren", color="blue")
+    web_started_at = perf_counter()
     await web.start()
     dash_host = settings.get("bot.dashboard.host", "0.0.0.0")
     dash_port = int(settings.get("bot.dashboard.port", 8787))
-    console.line("WEB", f"Dashboard läuft auf {dash_host}:{dash_port}", color="green")
-    console.line("BOOT", "Discord-Login startet …", color="cyan")
+    console.line("WEB", f"Dashboard aktiv auf {dash_host}:{dash_port} ({perf_counter() - web_started_at:.2f}s).", color="green")
+    console.line("BOOT", "Discord-Gateway-Login startet …", color="cyan")
 
     async def _run_bot():
         try:
@@ -124,6 +132,7 @@ async def main():
             pass
 
     if stop_task in done and not bot_task.done():
+        console.section("Shutdown", "Beende Dienste sauber", color="yellow")
         console.line("STOP", "Bot wird sauber beendet …", color="yellow")
         try:
             await bot.close()
@@ -152,7 +161,8 @@ async def main():
         pass
 
     try:
-        console.line("BYE", "Shutdown abgeschlossen. Bis später.", color="magenta")
+        total_runtime = perf_counter() - boot_started_at
+        console.line("BYE", f"Shutdown abgeschlossen. Gesamtlaufzeit: {total_runtime:.2f}s.", color="magenta")
     except Exception:
         pass
 
