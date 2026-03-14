@@ -70,7 +70,7 @@ class ActionSelect(discord.ui.Select):
             discord.SelectOption(label="Transfer", value="transfer", emoji="👑"),
         ]
         super().__init__(
-            placeholder="Aktion waehlen…",
+            placeholder="Aktion wählen…",
             options=options,
             min_values=1,
             max_values=1,
@@ -86,7 +86,7 @@ class ActionSelect(discord.ui.Select):
 class UserSelect(discord.ui.UserSelect):
     def __init__(self, view):
         super().__init__(
-            placeholder="User waehlen…",
+            placeholder="User wählen…",
             min_values=1,
             max_values=1,
             custom_id="starry:tempvoice_user",
@@ -152,7 +152,7 @@ class TempVoicePanelView(discord.ui.LayoutView):
             self.add_item(container)
 
         self.btn_rename = discord.ui.Button(
-            label="Name aendern",
+            label="Name ändern",
             emoji="✏️",
             style=discord.ButtonStyle.primary,
         )
@@ -180,7 +180,7 @@ class TempVoicePanelView(discord.ui.LayoutView):
         self.btn_lock.callback = self._on_lock
 
         self.btn_public = discord.ui.Button(
-            label="Oeffentlich" if self.private else "Privat",
+            label="Öffentlich" if self.private else "Privat",
             emoji="🌐" if self.private else "🙈",
             style=discord.ButtonStyle.success if self.private else discord.ButtonStyle.secondary,
         )
@@ -241,7 +241,7 @@ class TempVoicePanelView(discord.ui.LayoutView):
 
     async def try_execute_action(self, interaction: discord.Interaction):
         if not self.selected_action or not self.selected_user:
-            await interaction.response.send_message("Bitte Aktion und User auswaehlen.", ephemeral=True)
+            await interaction.response.send_message("Bitte Aktion und User auswählen.", ephemeral=True)
             return
         action = str(self.selected_action)
         target = self.selected_user

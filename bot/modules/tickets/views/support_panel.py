@@ -25,7 +25,7 @@ class SupportPanelButton(discord.ui.Button):
             )
             await interaction.response.send_message("Ich habe dir eine DM geschickt.", ephemeral=True)
         except Exception:
-            await interaction.response.send_message("DM nicht moeglich. Bitte DMs aktivieren.", ephemeral=True)
+            await interaction.response.send_message("DM nicht möglich. Bitte DMs aktivieren.", ephemeral=True)
 
 
 class SupportPanelView(discord.ui.LayoutView):

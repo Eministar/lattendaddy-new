@@ -25,7 +25,7 @@ class TicketCommands(commands.Cog):
             return await interaction.response.send_message(err, ephemeral=True)
         await self.service.toggle_claim(interaction)
 
-    @ticket.command(name="schliessen", description="🔒 𑁉 Ticket schließen")
+    @ticket.command(name="schließen", description="🔒 𑁉 Ticket schließen")
     async def close(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)

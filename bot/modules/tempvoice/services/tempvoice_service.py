@@ -366,7 +366,7 @@ class TempVoiceService:
         try:
             await ch.set_permissions(interaction.guild.default_role, overwrite=ow)
         except Exception:
-            return await interaction.response.send_message("Konnte den Lock nicht aendern.", ephemeral=True)
+            return await interaction.response.send_message("Konnte den Lock nicht ändern.", ephemeral=True)
         await self.refresh_panel(interaction.guild, ch.id)
         await interaction.response.send_message("Lock aktualisiert.", ephemeral=True)
 
@@ -384,7 +384,7 @@ class TempVoiceService:
         try:
             await ch.set_permissions(interaction.guild.default_role, overwrite=ow)
         except Exception:
-            return await interaction.response.send_message("Konnte den Modus nicht aendern.", ephemeral=True)
+            return await interaction.response.send_message("Konnte den Modus nicht ändern.", ephemeral=True)
         await self.refresh_panel(interaction.guild, ch.id)
         await interaction.response.send_message("Sichtbarkeit aktualisiert.", ephemeral=True)
 
@@ -495,7 +495,7 @@ class TempVoiceService:
         try:
             await self.db.set_tempvoice_owner(interaction.guild.id, channel.id, member.id)
         except Exception:
-            return await interaction.response.send_message("Konnte Owner nicht uebertragen.", ephemeral=True)
+            return await interaction.response.send_message("Konnte Owner nicht übertragen.", ephemeral=True)
         try:
             await channel.set_permissions(interaction.user, overwrite=None)
             ow = channel.overwrites_for(member)
@@ -509,7 +509,7 @@ class TempVoiceService:
         except Exception:
             pass
         await self.refresh_panel(interaction.guild, channel.id)
-        await interaction.response.send_message(f"Owner an {member.mention} uebertragen.", ephemeral=True)
+        await interaction.response.send_message(f"Owner an {member.mention} übertragen.", ephemeral=True)
 
     async def send_panel_for_channel(self, interaction: discord.Interaction, channel_id: int):
         ch, room, err = await self._get_channel_and_room(interaction, channel_id)

@@ -323,6 +323,72 @@ def build_dm_ticket_added_embed(settings, guild: discord.Guild | None, ticket_id
     return _wrap(container)
 
 
+def build_ticket_claim_embed(
+    settings,
+    guild: discord.Guild | None,
+    staff: discord.Member,
+    category_label: str,
+    priority_label: str,
+    ticket_id: int,
+    *,
+    for_dm: bool = False,
+):
+    info = em(settings, "info", guild) or "ℹ️"
+    intro = (
+        f"**{staff.display_name}** hat dein Ticket übernommen und ist jetzt deine direkte Ansprechperson."
+        if for_dm
+        else f"{staff.mention} übernimmt dieses Ticket jetzt verbindlich und kümmert sich ab sofort darum."
+    )
+    owner_line = f"**{staff.display_name}**" if for_dm else staff.mention
+    details = (
+        f"┏`🧑‍💻` - Zuständig: {owner_line}\n"
+        f"┣`🧭` - Bereich: **{category_label}**\n"
+        f"┣`🚦` - Priorität: **{priority_label}**\n"
+        f"┗`📚` - Ticket-ID: `{int(ticket_id)}`"
+    )
+    if for_dm:
+        next_steps = (
+            "┏`📩` - Antworte einfach weiter hier per DM\n"
+            "┣`🔁` - Jede Nachricht wird automatisch ans Ticket angehängt\n"
+            "┗`✨` - Neue Updates bekommst du direkt hier zurück"
+        )
+    else:
+        next_steps = (
+            "┏`🧾` - Der Claim ist jetzt sichtbar im Team-Thread\n"
+            "┣`📬` - Der User kann wie gewohnt weiter per DM antworten\n"
+            "┗`⚡` - Status, Priorität und weitere Aktionen laufen ab jetzt über dich"
+        )
+    note = (
+        f"{info} **Info**\n"
+        "Klare Zuständigkeit sorgt jetzt für schnellere Antworten und einen sauberen Bearbeitungsfluss."
+    )
+
+    container = discord.ui.Container(accent_colour=_color(settings, guild))
+    _add_banner(container, Banners.TICKETS_CLAIM)
+    avatar_url = None
+    try:
+        avatar_url = staff.display_avatar.url
+    except Exception:
+        avatar_url = None
+    if avatar_url:
+        container.add_item(
+            discord.ui.Section(
+                "**✅ 𑁉 TICKET ÜBERNOMMEN**",
+                intro,
+                accessory=discord.ui.Thumbnail(media=avatar_url, description=f"Avatar von {staff.display_name}"),
+            )
+        )
+    else:
+        container.add_item(discord.ui.TextDisplay(f"**✅ 𑁉 TICKET ÜBERNOMMEN**\n{intro}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**`📋` ÜBERBLICK**\n{details}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**`📌` NÄCHSTE SCHRITTE**\n{next_steps}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(note))
+    return _wrap(container)
+
+
 def build_thread_status_embed(
     settings,
     guild: discord.Guild | None,

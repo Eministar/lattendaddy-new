@@ -35,7 +35,7 @@ def build_dashboard_view(settings, guild: discord.Guild | None, stats: dict, but
     desc = (
         f"{arrow2} Lerne Länder über echte Flaggenbilder im schnellen Quiz-Modus.\n"
         f"{arrow2} Starte Normal, Easy, Daily oder Custom und sammle Punkte + Streaks.\n"
-        f"{arrow2} Custom: Einsatz setzen, 15s Zeit, richtig = doppelt zurueck, falsch = Einsatz weg.\n\n"
+        f"{arrow2} Custom: Einsatz setzen, 15s Zeit, richtig = doppelt zurück, falsch = Einsatz weg.\n\n"
         f"┏`👥` - Spieler: **{int(stats.get('players', 0))}**\n"
         f"┣`🎮` - Runden: **{int(stats.get('rounds', 0))}**\n"
         f"┣`🔥` - Beste Streak: **{int(stats.get('best_streak', 0))}**\n"

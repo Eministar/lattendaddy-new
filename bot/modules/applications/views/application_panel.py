@@ -48,7 +48,7 @@ class ApplicationPanelButton(discord.ui.Button):
         has_ticket = await service.has_open_ticket(interaction.guild.id, interaction.user.id)
         if has_ticket:
             return await interaction.response.send_message(
-                "Du hast bereits ein offenes Ticket. Bitte schliesse zuerst dein Ticket.",
+                "Du hast bereits ein offenes Ticket. Bitte schließe zuerst dein Ticket.",
                 ephemeral=True,
             )
         await interaction.response.send_modal(ApplicationPanelModal(service))

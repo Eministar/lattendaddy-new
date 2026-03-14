@@ -509,12 +509,12 @@ class ModerationCommands(commands.Cog):
         )
         await _ephemeral_embed(interaction, embed)
 
-    @permission.command(name="mod-grant", description="✅ 𑁉 Bot-Command fuer User oder Rolle freigeben")
+    @permission.command(name="mod-grant", description="✅ 𑁉 Bot-Command für User oder Rolle freigeben")
     @app_commands.describe(
         action="Bot-Aktion",
         user="Zieluser",
         role="Zielrolle",
-        also_discord_permission="Setzt falls noetig auch die native Discord-Permission",
+        also_discord_permission="Setzt falls nötig auch die native Discord-Permission",
         reason="Optionaler Audit-Log-Grund",
     )
     async def permission_mod_grant(
@@ -538,7 +538,7 @@ class ModerationCommands(commands.Cog):
             return await _ephemeral(interaction, "Unbekannte Bot-Aktion.")
 
         native = self.permission_service.action_required_permission(spec.key)
-        native_note = "Discord-Permission unveraendert."
+        native_note = "Discord-Permission unverändert."
         if also_discord_permission and native:
             if subject_type == "user" and isinstance(subject, discord.Member):
                 ok, native_err, _managed_role, _changed = await self.permission_service.set_member_permission(
@@ -585,12 +585,12 @@ class ModerationCommands(commands.Cog):
         embed.add_field(name="Freigegebene Rollen", value=self._format_subject_list(interaction.guild, role_ids, "role"), inline=False)
         await _ephemeral_embed(interaction, embed)
 
-    @permission.command(name="mod-revoke", description="🚫 𑁉 Bot-Command fuer User oder Rolle entfernen")
+    @permission.command(name="mod-revoke", description="🚫 𑁉 Bot-Command für User oder Rolle entfernen")
     @app_commands.describe(
         action="Bot-Aktion",
         user="Zieluser",
         role="Zielrolle",
-        remove_discord_permission="Entfernt falls noetig auch die native Discord-Permission",
+        remove_discord_permission="Entfernt falls nötig auch die native Discord-Permission",
         reason="Optionaler Audit-Log-Grund",
     )
     async def permission_mod_revoke(
@@ -614,7 +614,7 @@ class ModerationCommands(commands.Cog):
             return await _ephemeral(interaction, "Unbekannte Bot-Aktion.")
 
         native = self.permission_service.action_required_permission(spec.key)
-        native_note = "Discord-Permission unveraendert."
+        native_note = "Discord-Permission unverändert."
         if remove_discord_permission and native:
             if subject_type == "user" and isinstance(subject, discord.Member):
                 ok, native_err, _managed_role, _changed = await self.permission_service.set_member_permission(

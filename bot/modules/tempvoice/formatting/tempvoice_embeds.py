@@ -71,7 +71,7 @@ def build_tempvoice_panel_container(
     status_priv = "Privat" if private else "Oeffentlich"
 
     desc = (
-        f"{arrow2} Hier steuerst du deinen Temp-Voice. Alle Aenderungen gelten sofort.\n\n"
+        f"{arrow2} Hier steuerst du deinen Temp-Voice. Alle Änderungen gelten sofort.\n\n"
         f"┏`👤` - Owner: {owner.mention}\n"
         f"┣`🔊` - Channel: {channel.mention}\n"
         f"┣`🔒` - Status: **{status_lock}** / **{status_priv}**\n"

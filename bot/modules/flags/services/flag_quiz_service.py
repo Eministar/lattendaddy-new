@@ -100,7 +100,6 @@ class FlagQuizService:
             "norwegen": "NO",
             "norway": "NO",
             "japan": "JP",
-            "suedkorea": "KR",
             "südkorea": "KR",
             "south korea": "KR",
             "china": "CN",
@@ -114,7 +113,6 @@ class FlagQuizService:
             "canada": "CA",
             "australien": "AU",
             "austria": "AT",
-            "oesterreich": "AT",
             "österreich": "AT",
             "schweiz": "CH",
             "switzerland": "CH",
@@ -151,14 +149,9 @@ class FlagQuizService:
             return True
 
     def _normalize(self, text: str) -> str:
-        x = str(text or "").strip().lower()
-        x = (
-            x.replace("ä", "ae")
-            .replace("ö", "oe")
-            .replace("ü", "ue")
-            .replace("ß", "ss")
-        )
-        x = re.sub(r"[^a-z0-9 ]", " ", x)
+        x = str(text or "").casefold().strip()
+        x = x.replace("ß", "ss")
+        x = re.sub(r"[^0-9a-zäöü ]", " ", x)
         x = re.sub(r"\s+", " ", x).strip()
         return x
 

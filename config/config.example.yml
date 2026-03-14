@@ -262,9 +262,9 @@ flags:
 guess_number:
   enabled: true
   guess_cooldown_seconds: 0
-  hint_messages: true
+  hint_messages: false
   default_min: 1
-  default_max: 100
+  default_max: 1000
   round_timeout_seconds: 180
   auto_interval_seconds: 180
 
@@ -275,17 +275,17 @@ emoji_quiz:
   auto_interval_seconds: 240
   points_per_win: 10
   enabled_categories:
-    - "staedte"
-    - "laender"
+    - "städte"
+    - "länder"
     - "filme"
     - "serien"
     - "essen"
-    - "sprichwoerter"
+    - "sprichwörter"
     - "songs"
     - "flaggen"
     - "user"
     - "spiele"
-    - "maerchen"
+    - "märchen"
 
 
 ticket:
@@ -416,7 +416,7 @@ user_stats:
       role_id: 0
       type: "messages"
       threshold: 1000
-    - name: "20 Willkommensgruesse"
+    - name: "20 Willkommensgrüße"
       role_id: 0
       type: "welcomes"
       threshold: 20
@@ -532,7 +532,7 @@ achievements:
       description: "Schreibe 5.000 Nachrichten im Server."
       dm_message: "💬 Erfolg! Du hast 5.000 Nachrichten geschrieben."
     - code: "welcome_15"
-      name: "Erfolg: 15 Begruessungen"
+      name: "Erfolg: 15 Begrüßungen"
       type: "welcomes"
       threshold: 15
       role_id: 0
@@ -540,7 +540,7 @@ achievements:
       description: "Begrüße 15 neue Member."
       dm_message: "👋 Erfolg! Du hast 15 Leute willkommen geheißen."
     - code: "welcome_30"
-      name: "Erfolg: 30 Begruessungen"
+      name: "Erfolg: 30 Begrüßungen"
       type: "welcomes"
       threshold: 30
       role_id: 0
@@ -572,7 +572,7 @@ achievements:
       description: "Verbringe 100 Stunden im Voice."
       dm_message: "🎙️ Erfolg! 100 Stunden im Voice erreicht."
     - code: "welcome_20"
-      name: "Erfolg: 20 Begruessungen"
+      name: "Erfolg: 20 Begrüßungen"
       type: "welcomes"
       threshold: 20
       role_id: 0

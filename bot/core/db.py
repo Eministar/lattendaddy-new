@@ -868,7 +868,7 @@ class Database:
         await self._conn.execute("""
         CREATE TABLE IF NOT EXISTS emoji_quiz_custom_categories (
             guild_id INTEGER NOT NULL,
-            category_key TEXT NOT NULL,
+            category_key VARCHAR(64) NOT NULL,
             label TEXT NOT NULL,
             description TEXT,
             created_by INTEGER NOT NULL,
@@ -882,7 +882,7 @@ class Database:
         CREATE TABLE IF NOT EXISTS emoji_quiz_custom_questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             guild_id INTEGER NOT NULL,
-            category_key TEXT NOT NULL,
+            category_key VARCHAR(64) NOT NULL,
             prompt TEXT NOT NULL,
             answer TEXT NOT NULL,
             aliases_json TEXT,
@@ -902,9 +902,9 @@ class Database:
             user_id INTEGER NOT NULL,
             thread_id INTEGER NOT NULL,
             message_id INTEGER NOT NULL,
-            submission_type TEXT NOT NULL,
-            status TEXT NOT NULL,
-            category_key TEXT,
+            submission_type VARCHAR(32) NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            category_key VARCHAR(64),
             category_label TEXT,
             prompt TEXT NOT NULL,
             answer TEXT,

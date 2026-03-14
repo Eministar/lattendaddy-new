@@ -28,6 +28,7 @@ from bot.modules.tickets.formatting.ticket_embeds import (
     build_dm_ticket_update_embed,
     build_ticket_log_embed,
     build_dm_ticket_forwarded_embed,
+    build_ticket_claim_embed,
 )
 from bot.modules.tickets.views.confirm_view import TicketConfirmView
 from bot.utils.emojis import em
@@ -335,6 +336,13 @@ class TicketService:
             4: "Dringend",
         }
         return mapping.get(int(priority or 2), "Normal")
+
+    def _ticket_claim_meta(self, guild_id: int, t: dict) -> tuple[str, str, int]:
+        category_key = str(t.get("category_key") or self._g(guild_id, "ticket.default_category", "allgemeine_frage"))
+        category_label = self._ticket_category_label(guild_id, category_key)
+        priority_label = self._priority_label(t.get("priority"))
+        ticket_id = int(t.get("ticket_id") or 0)
+        return category_label, priority_label, ticket_id
 
     def _ticket_request_key(self, guild_id: int, user_id: int) -> tuple[int, int]:
         return int(guild_id), int(user_id)
@@ -667,17 +675,25 @@ class TicketService:
         except Exception as e:
             return False, f"{type(e).__name__}: {e}"
 
-        color = parse_int_color(self.settings, guild.id)
-        arrow2 = em(self.settings, "arrow2", guild) or "➜"
-
         if claimed:
-            title = "✅ 𑁉 TICKET ÜBERNOMMEN"
-            desc = (
-                f"{arrow2} Hey! Ich bin **{staff.display_name}** und übernehme dein Ticket. 💜\n\n"
-                "┏`📩` - Antworte einfach hier per DM\n"
-                "┗`🔁` - Ich hänge jede Nachricht automatisch ans Ticket."
+            category_label, priority_label, ticket_id = self._ticket_claim_meta(guild.id, t)
+            view = build_ticket_claim_embed(
+                self.settings,
+                guild,
+                staff,
+                category_label,
+                priority_label,
+                ticket_id,
+                for_dm=True,
             )
+            try:
+                await user.send(view=view)
+                return True, None
+            except Exception as e:
+                return False, f"{type(e).__name__}: {e}"
         else:
+            color = parse_int_color(self.settings, guild.id)
+            arrow2 = em(self.settings, "arrow2", guild) or "➜"
             title = "🔓 𑁉 TICKET FREIGEGEBEN"
             desc = (
                 f"{arrow2} **{staff.display_name}** hat das Ticket freigegeben.\n\n"
@@ -1211,7 +1227,7 @@ class TicketService:
                                                                   claimed=False)
             await self._update_summary_controls(thread, int(t.get("summary_id") or 0), ticket_id, claimed=False, status="open")
 
-            await _ephemeral(interaction, "Ticket freigegeben.")
+            await _ephemeral(interaction, "Ticket freigegeben. Es ist jetzt wieder offen.")
             await self.logger.emit(self.bot, "ticket_released", {
                 "ticket_id": ticket_id,
                 "staff_id": interaction.user.id,
@@ -1224,21 +1240,16 @@ class TicketService:
         await self._touch_ticket(int(ticket_id))
 
         try:
-            arrow2 = em(self.settings, "arrow2", interaction.guild) or "➜"
-
-            view = build_thread_status_embed(
+            category_label, priority_label, claim_ticket_id = self._ticket_claim_meta(interaction.guild.id, t)
+            view = build_ticket_claim_embed(
                 self.settings,
                 interaction.guild,
-                "✅ 𑁉 TICKET ÜBERNOMMEN",
-                (
-                    f"{arrow2} Hey! Ich bin {interaction.user.mention} und übernehme dein Ticket. 💜\n\n"
-                    "┏`📩` - Schreib einfach hier rein\n"
-                    "┗`🧾` - Ich kümmere mich jetzt darum."
-                ),
                 interaction.user,
-                banner_url=Banners.TICKETS_CLAIM,
+                category_label,
+                priority_label,
+                claim_ticket_id,
+                for_dm=False,
             )
-
             await thread.send(view=view)
         except Exception:
             pass
@@ -1247,7 +1258,7 @@ class TicketService:
                                                               claimed=True)
         await self._update_summary_controls(thread, int(t.get("summary_id") or 0), ticket_id, claimed=True, status="claimed")
 
-        await _ephemeral(interaction, "Ticket geclaimed.")
+        await _ephemeral(interaction, "Ticket erfolgreich übernommen. Du bist jetzt als zuständige Person eingetragen.")
         await self.logger.emit(self.bot, "ticket_claimed", {
             "ticket_id": ticket_id,
             "staff_id": interaction.user.id,
@@ -1411,8 +1422,8 @@ class TicketService:
         if claimed:
             await self.db.set_claim(ticket_id, actor.id)
             await self._touch_ticket(int(ticket_id))
-            title = "✅ Ticket übernommen"
-            body = f"Hey! Ich bin {actor.mention} und werde dir heute helfen."
+            title = "✅ 𑁉 TICKET ÜBERNOMMEN"
+            body = ""
         else:
             await self.db.set_claim(ticket_id, None)
             await self._touch_ticket(int(ticket_id))
@@ -1420,14 +1431,26 @@ class TicketService:
             body = f"{actor.mention} kümmert sich nicht mehr um dieses Ticket."
 
         try:
-            view = build_thread_status_embed(
-                self.settings,
-                guild,
-                title,
-                body,
-                actor,
-                banner_url=Banners.TICKETS_CLAIM if claimed else None,
-            )
+            if claimed:
+                category_label, priority_label, claim_ticket_id = self._ticket_claim_meta(guild.id, t)
+                view = build_ticket_claim_embed(
+                    self.settings,
+                    guild,
+                    actor,
+                    category_label,
+                    priority_label,
+                    claim_ticket_id,
+                    for_dm=False,
+                )
+            else:
+                view = build_thread_status_embed(
+                    self.settings,
+                    guild,
+                    title,
+                    body,
+                    actor,
+                    banner_url=Banners.TICKETS_CLAIM if claimed else None,
+                )
             await thread.send(view=view)
         except Exception:
             pass

@@ -11,7 +11,11 @@ from typing import Any
 
 import discord
 
-from bot.modules.emoji_quiz.data.question_bank import EMOJI_QUIZ_BANK, EMOJI_QUIZ_CATEGORY_ORDER
+from bot.modules.emoji_quiz.data.question_bank import (
+    EMOJI_QUIZ_BANK,
+    EMOJI_QUIZ_CATEGORY_ALIASES,
+    EMOJI_QUIZ_CATEGORY_ORDER,
+)
 from bot.modules.emoji_quiz.formatting.emoji_quiz_embeds import (
     build_closed_embed,
     build_dashboard_view,
@@ -201,9 +205,9 @@ class EmojiQuizService:
             stats["monthly_points"] = 0
 
     def _normalize(self, text: str) -> str:
-        out = str(text or "").lower().strip()
-        out = out.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
-        out = re.sub(r"[^a-z0-9 ]", " ", out)
+        out = str(text or "").casefold().strip()
+        out = out.replace("ß", "ss")
+        out = re.sub(r"[^0-9a-zäöü ]", " ", out)
         out = re.sub(r"\s+", " ", out).strip()
         return out
 
@@ -222,11 +226,15 @@ class EmojiQuizService:
     def _clean_text(self, text: str) -> str:
         return re.sub(r"\s+", " ", str(text or "")).strip()
 
+    def _canonical_category_key(self, key: str | None) -> str:
+        raw = self._clean_text(key or "").lower()
+        return str(EMOJI_QUIZ_CATEGORY_ALIASES.get(raw, raw))
+
     def _default_category_keys(self, guild_id: int) -> list[str]:
         raw = self.settings.get_guild(guild_id, "emoji_quiz.enabled_categories", EMOJI_QUIZ_CATEGORY_ORDER) or EMOJI_QUIZ_CATEGORY_ORDER
         if not isinstance(raw, list):
             raw = list(EMOJI_QUIZ_CATEGORY_ORDER)
-        return [str(key).strip() for key in raw if str(key).strip()]
+        return [self._canonical_category_key(str(key)) for key in raw if str(key).strip()]
 
     def _parse_aliases(self, raw: str | None) -> list[str]:
         if not raw:
@@ -261,8 +269,7 @@ class EmojiQuizService:
 
     def _slugify_category_key(self, label: str) -> str:
         key = str(label or "").strip().lower()
-        key = key.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")
-        key = re.sub(r"[^a-z0-9]+", "_", key)
+        key = re.sub(r"[^0-9a-zäöüß]+", "_", key)
         key = re.sub(r"_+", "_", key).strip("_")
         return key[:40] or "community"
 
@@ -329,7 +336,7 @@ class EmojiQuizService:
         value = self._clean_text(raw or "")
         if not value:
             return None
-        lower = value.lower()
+        lower = self._canonical_category_key(value.lower())
         if lower in catalog:
             return lower
         slug = self._slugify_category_key(value)
@@ -391,7 +398,7 @@ class EmojiQuizService:
             categories = json.loads(str(row[7])) if row[7] else defaults["enabled_categories"]
         except Exception:
             categories = defaults["enabled_categories"]
-        categories = [str(key) for key in categories if str(key) in catalog]
+        categories = [self._canonical_category_key(str(key)) for key in categories if self._canonical_category_key(str(key)) in catalog]
         if not categories:
             categories = list(default_categories)
         return {
@@ -439,7 +446,7 @@ class EmojiQuizService:
         }
         rows = await self.db.list_emoji_quiz_custom_questions(int(guild_id), category_key=None, active_only=True)
         for row in rows:
-            category_key = str(row[2] or "").strip()
+            category_key = self._canonical_category_key(str(row[2] or "").strip())
             if not category_key:
                 continue
             try:
@@ -1103,8 +1110,8 @@ class EmojiQuizService:
             "message_id": int(row[4]),
             "submission_type": str(row[5] or "question"),
             "status": str(row[6] or "pending"),
-            "category_key": str(row[7] or ""),
-            "category_label": str(row[8] or row[7] or ""),
+            "category_key": self._canonical_category_key(str(row[7] or "")),
+            "category_label": str(row[8] or self._canonical_category_key(str(row[7] or "")) or ""),
             "prompt": str(row[9] or ""),
             "answer": str(row[10] or ""),
             "aliases": list(aliases or []),

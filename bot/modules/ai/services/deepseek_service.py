@@ -147,7 +147,7 @@ class DeepSeekService:
                 reply = reply[: _MAX_REPLY_CHARS].rstrip()
             return reply, None
         except Exception:
-            return None, "Antwort ungueltig"
+            return None, "Antwort ungültig"
 
     def clean_prompt(self, bot_user_id: int, text: str) -> str:
         if not text:

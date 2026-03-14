@@ -31,22 +31,22 @@ MODERATION_ACTIONS: tuple[ModerationActionSpec, ...] = (
     ModerationActionSpec("kick", "Kick", "User kicken", "kick_members"),
     ModerationActionSpec("ban", "Ban", "User bannen", "ban_members"),
     ModerationActionSpec("unban", "Unban", "User entbannen", "ban_members"),
-    ModerationActionSpec("softban", "Softban", "Softban ausfuehren", "ban_members"),
-    ModerationActionSpec("purge", "Purge", "Nachrichten loeschen", "manage_messages"),
+    ModerationActionSpec("softban", "Softban", "Softban ausführen", "ban_members"),
+    ModerationActionSpec("purge", "Purge", "Nachrichten löschen", "manage_messages"),
     ModerationActionSpec("slowmode", "Slowmode", "Slowmode setzen", "manage_channels"),
     ModerationActionSpec("lock", "Lock", "Channel sperren", "manage_channels"),
     ModerationActionSpec("unlock", "Unlock", "Channel entsperren", "manage_channels"),
     ModerationActionSpec("nick", "Nick", "Nickname setzen", "manage_nicknames"),
-    ModerationActionSpec("role_add", "Role Add", "Rolle hinzufuegen", "manage_roles"),
+    ModerationActionSpec("role_add", "Role Add", "Rolle hinzufügen", "manage_roles"),
     ModerationActionSpec("role_remove", "Role Remove", "Rolle entfernen", "manage_roles"),
-    ModerationActionSpec("mass_timeout", "Mass Timeout", "Timeout fuer ganze Rolle", "moderate_members"),
+    ModerationActionSpec("mass_timeout", "Mass Timeout", "Timeout für ganze Rolle", "moderate_members"),
     ModerationActionSpec("warns", "Warns", "Warn-History lesen"),
     ModerationActionSpec("case", "Case", "Case anzeigen"),
     ModerationActionSpec("note", "Note", "Mod-Notiz anlegen"),
     ModerationActionSpec("notes", "Notes", "Mod-Notizen lesen"),
     ModerationActionSpec("unwarn", "Unwarn", "Warns/Timeouts entfernen"),
-    ModerationActionSpec("case_reason", "Case Reason", "Case-Grund aendern"),
-    ModerationActionSpec("clear_notes", "Clear Notes", "Mod-Notizen loeschen"),
+    ModerationActionSpec("case_reason", "Case Reason", "Case-Grund ändern"),
+    ModerationActionSpec("clear_notes", "Clear Notes", "Mod-Notizen löschen"),
     ModerationActionSpec("say", "Say", "Nachricht als Bot senden", "manage_messages"),
     ModerationActionSpec("backup_save", "Backup Save", "Backup speichern", "manage_guild"),
     ModerationActionSpec("backup_load", "Backup Load", "Backup laden", "manage_guild"),
@@ -54,25 +54,25 @@ MODERATION_ACTIONS: tuple[ModerationActionSpec, ...] = (
     ModerationActionSpec("backup_diff", "Backup Diff", "Backup-Unterschiede anzeigen", "manage_guild"),
     ModerationActionSpec("backup_autosave", "Backup Autosave", "Auto-Backup umstellen", "manage_guild"),
     ModerationActionSpec("ai_reset_limit", "AI Reset Limit", "AI-Tageslimit resetten", "manage_guild"),
-    ModerationActionSpec("application_ask", "Application Ask", "Rueckfrage zur Bewerbung senden", "manage_guild"),
+    ModerationActionSpec("application_ask", "Application Ask", "Rückfrage zur Bewerbung senden", "manage_guild"),
     ModerationActionSpec("application_decide", "Application Decide", "Bewerbungen annehmen oder ablehnen"),
     ModerationActionSpec("application_panel_send", "Application Panel Send", "Bewerbungs-Panel senden", "manage_guild"),
     ModerationActionSpec("beichte_setup", "Beichte Setup", "Beichte konfigurieren", "manage_guild"),
     ModerationActionSpec("beichte_panel", "Beichte Panel", "Beichte-Panel senden", "manage_guild"),
-    ModerationActionSpec("beichte_close", "Beichte Close", "Beichte-Thread schliessen", "manage_threads"),
-    ModerationActionSpec("beichte_open", "Beichte Open", "Beichte-Thread oeffnen", "manage_threads"),
-    ModerationActionSpec("beichte_delete", "Beichte Delete", "Beichte-Thread loeschen", "manage_threads"),
+    ModerationActionSpec("beichte_close", "Beichte Close", "Beichte-Thread schließen", "manage_threads"),
+    ModerationActionSpec("beichte_open", "Beichte Open", "Beichte-Thread öffnen", "manage_threads"),
+    ModerationActionSpec("beichte_delete", "Beichte Delete", "Beichte-Thread löschen", "manage_threads"),
     ModerationActionSpec("beichte_who", "Beichte Who", "Beichte-Ersteller anzeigen", "manage_threads"),
     ModerationActionSpec("suggestion_panel_send", "Suggestion Panel Send", "Vorschlags-Panel senden"),
-    ModerationActionSpec("suggestion_status", "Suggestion Status", "Vorschlags-Status aendern"),
+    ModerationActionSpec("suggestion_status", "Suggestion Status", "Vorschlags-Status ändern"),
     ModerationActionSpec("suggestion_response", "Suggestion Response", "Vorschlags-Antwort setzen"),
     ModerationActionSpec("ticket_claim", "Ticket Claim", "Tickets claimen oder freigeben"),
     ModerationActionSpec("ticket_note", "Ticket Note", "Interne Ticket-Notizen setzen"),
-    ModerationActionSpec("ticket_close", "Ticket Close", "Tickets schliessen"),
-    ModerationActionSpec("ticket_add", "Ticket Add", "User zu Tickets hinzufuegen"),
-    ModerationActionSpec("ticket_reopen", "Ticket Reopen", "Tickets wieder oeffnen"),
-    ModerationActionSpec("ticket_status", "Ticket Status", "Ticket-Status aendern"),
-    ModerationActionSpec("ticket_priority", "Ticket Priority", "Ticket-Prioritaet aendern"),
+    ModerationActionSpec("ticket_close", "Ticket Close", "Tickets schließen"),
+    ModerationActionSpec("ticket_add", "Ticket Add", "User zu Tickets hinzufügen"),
+    ModerationActionSpec("ticket_reopen", "Ticket Reopen", "Tickets wieder öffnen"),
+    ModerationActionSpec("ticket_status", "Ticket Status", "Ticket-Status ändern"),
+    ModerationActionSpec("ticket_priority", "Ticket Priority", "Ticket-Priorität ändern"),
     ModerationActionSpec("ticket_escalate", "Ticket Escalate", "Tickets eskalieren"),
     ModerationActionSpec("ticket_category", "Ticket Category", "Ticket-Kategorie wechseln"),
     ModerationActionSpec("ticket_transcript", "Ticket Transcript", "Ticket-Transcript erstellen"),
@@ -83,7 +83,7 @@ MODERATION_ACTIONS: tuple[ModerationActionSpec, ...] = (
     ModerationActionSpec("giveaway_create", "Giveaway Create", "Giveaways erstellen"),
     ModerationActionSpec("giveaway_reroll", "Giveaway Reroll", "Giveaway-Gewinner neu auslosen"),
     ModerationActionSpec("poll_create", "Poll Create", "Umfragen erstellen"),
-    ModerationActionSpec("poll_close", "Poll Close", "Umfragen schliessen"),
+    ModerationActionSpec("poll_close", "Poll Close", "Umfragen schließen"),
     ModerationActionSpec("parliament_start_vote", "Parliament Start Vote", "Parlaments-Votum starten"),
     ModerationActionSpec("parliament_stop_vote", "Parliament Stop Vote", "Parlaments-Votum stoppen"),
     ModerationActionSpec("parliament_panel", "Parliament Panel", "Parlaments-Panel aktualisieren"),
@@ -93,32 +93,32 @@ MODERATION_ACTIONS: tuple[ModerationActionSpec, ...] = (
     ModerationActionSpec("parliament_party_list", "Parliament Party List", "Parteien anzeigen"),
     ModerationActionSpec("seelsorge_setup", "Seelsorge Setup", "Seelsorge konfigurieren"),
     ModerationActionSpec("seelsorge_panel", "Seelsorge Panel", "Seelsorge-Panel senden"),
-    ModerationActionSpec("seelsorge_close", "Seelsorge Close", "Seelsorge-Threads schliessen"),
-    ModerationActionSpec("seelsorge_open", "Seelsorge Open", "Seelsorge-Threads oeffnen"),
-    ModerationActionSpec("seelsorge_delete", "Seelsorge Delete", "Seelsorge-Threads loeschen"),
+    ModerationActionSpec("seelsorge_close", "Seelsorge Close", "Seelsorge-Threads schließen"),
+    ModerationActionSpec("seelsorge_open", "Seelsorge Open", "Seelsorge-Threads öffnen"),
+    ModerationActionSpec("seelsorge_delete", "Seelsorge Delete", "Seelsorge-Threads löschen"),
     ModerationActionSpec("seelsorge_who", "Seelsorge Who", "Seelsorge-Ersteller anzeigen"),
     ModerationActionSpec("wort_setup", "Wort Setup", "Wort-zum-Sonntag konfigurieren"),
     ModerationActionSpec("wort_panel", "Wort Panel", "Wort-zum-Sonntag-Panel senden"),
     ModerationActionSpec("wort_accept", "Wort Accept", "Weisheiten annehmen"),
     ModerationActionSpec("wort_reject", "Wort Reject", "Weisheiten ablehnen"),
     ModerationActionSpec("roles_sync", "Roles Sync", "Auto-Rollen synchronisieren", "manage_roles"),
-    ModerationActionSpec("roles_rescan", "Roles Rescan", "Rollen/Erfolge neu pruefen", "manage_roles"),
+    ModerationActionSpec("roles_rescan", "Roles Rescan", "Rollen/Erfolge neu prüfen", "manage_roles"),
     ModerationActionSpec("roles_mass_add", "Roles Mass Add", "Rolle an alle vergeben", "manage_roles"),
     ModerationActionSpec("roles_panel_send", "Roles Panel Send", "Rollen-Info-Panel senden", "manage_guild"),
     ModerationActionSpec("roles_debug", "Roles Debug", "Rollen-Info debuggen", "manage_guild"),
     ModerationActionSpec("flag_setup", "Flag Setup", "Flaggenquiz konfigurieren", "manage_channels"),
     ModerationActionSpec("flag_panel", "Flag Panel", "Flaggen-Panel aktualisieren", "manage_channels"),
-    ModerationActionSpec("flag_kingrole", "Flag Kingrole", "Flaggenkoenig-Rolle setzen", "manage_roles"),
+    ModerationActionSpec("flag_kingrole", "Flag Kingrole", "Flaggenkönig-Rolle setzen", "manage_roles"),
     ModerationActionSpec("flag_start", "Flag Start", "Flaggenrunde starten", "manage_channels"),
     ModerationActionSpec("guess_setup", "Guess Setup", "Guess-The-Number konfigurieren", "manage_channels"),
     ModerationActionSpec("guess_panel", "Guess Panel", "Guess-The-Number-Panel aktualisieren", "manage_channels"),
     ModerationActionSpec("guess_start", "Guess Start", "Guess-The-Number starten", "manage_channels"),
-    ModerationActionSpec("guess_stop", "Guess Stop", "Guess-The-Number schliessen", "manage_channels"),
+    ModerationActionSpec("guess_stop", "Guess Stop", "Guess-The-Number schließen", "manage_channels"),
     ModerationActionSpec("guess_auto", "Guess Auto", "Guess-The-Number Auto-Event steuern", "manage_channels"),
     ModerationActionSpec("emoji_quiz_setup", "Emoji Quiz Setup", "Emoji-Quiz konfigurieren", "manage_channels"),
     ModerationActionSpec("emoji_quiz_panel", "Emoji Quiz Panel", "Emoji-Quiz-Panel aktualisieren", "manage_channels"),
     ModerationActionSpec("emoji_quiz_start", "Emoji Quiz Start", "Emoji-Quiz starten", "manage_channels"),
-    ModerationActionSpec("emoji_quiz_stop", "Emoji Quiz Stop", "Emoji-Quiz schliessen", "manage_channels"),
+    ModerationActionSpec("emoji_quiz_stop", "Emoji Quiz Stop", "Emoji-Quiz schließen", "manage_channels"),
     ModerationActionSpec("emoji_quiz_auto", "Emoji Quiz Auto", "Emoji-Quiz Auto-Event steuern", "manage_channels"),
     ModerationActionSpec("emoji_quiz_accept", "Emoji Quiz Accept", "Emoji-Quiz-Einsendungen annehmen", "manage_threads"),
     ModerationActionSpec("emoji_quiz_reject", "Emoji Quiz Reject", "Emoji-Quiz-Einsendungen ablehnen", "manage_threads"),
@@ -323,9 +323,9 @@ class PermissionService:
         if not bot_member or not bot_member.guild_permissions.manage_roles:
             return "Dem Bot fehlt `Manage Roles`."
         if role != guild.default_role and actor.id != guild.owner_id and role >= actor.top_role:
-            return "Du kannst nur Rollen unter deiner hoechsten Rolle aendern."
+            return "Du kannst nur Rollen unter deiner höchsten Rolle ändern."
         if role != guild.default_role and role >= bot_member.top_role:
-            return "Die Rolle liegt ueber der hoechsten Bot-Rolle."
+            return "Die Rolle liegt über der höchsten Bot-Rolle."
         return None
 
     def validate_manageable_member(self, actor: discord.Member, target: discord.Member) -> str | None:
@@ -336,9 +336,9 @@ class PermissionService:
         if target.id == guild.owner_id and actor.id != guild.owner_id:
             return "Der Server-Owner kann nicht verwaltet werden."
         if actor.id != guild.owner_id and target.id != actor.id and target.top_role >= actor.top_role:
-            return "Der User liegt auf oder ueber deiner Rollen-Hierarchie."
+            return "Der User liegt auf oder über deiner Rollen-Hierarchie."
         if target.id != guild.owner_id and target.top_role >= bot_member.top_role:
-            return "Der User liegt auf oder ueber der Bot-Rolle."
+            return "Der User liegt auf oder über der Bot-Rolle."
         return None
 
     def get_member_managed_role(self, guild: discord.Guild, user_id: int) -> discord.Role | None:
