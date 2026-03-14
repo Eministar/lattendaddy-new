@@ -13,6 +13,19 @@ import yaml
 
 SYSTEM_MODULE_KEYS = {"bot", "database", "logging"}
 SENSITIVE_KEY_PARTS = {"token", "password", "secret", "api_key", "access_key", "client_secret"}
+LONG_TEXT_KEY_PARTS = {
+    "prompt",
+    "description",
+    "text",
+    "body",
+    "template",
+    "message",
+    "footer",
+    "content",
+    "system",
+    "help",
+    "info",
+}
 
 MODULE_META: dict[str, dict[str, Any]] = {
     "ai": {"label": "AI / KI", "emoji": "🤖", "aliases": ("ki", "deepseek", "chatbot")},
@@ -358,6 +371,119 @@ class SetupService:
         if meta.kind == "none":
             return "null"
         return None
+
+    def reference_kind(self, meta: SettingMeta) -> str | None:
+        leaf = meta.leaf_name.casefold()
+        if leaf.endswith("_channel_id") or leaf.endswith("_channel_ids"):
+            return "channel"
+        if leaf.endswith("_thread_id") or leaf.endswith("_thread_ids"):
+            return "thread"
+        if leaf.endswith("_role_id") or leaf.endswith("_role_ids"):
+            return "role"
+        if leaf.endswith("_user_id") or leaf.endswith("_user_ids"):
+            return "user"
+        return None
+
+    def editor_kind(self, meta: SettingMeta) -> str:
+        reference = self.reference_kind(meta)
+        if reference:
+            return "reference_multi" if meta.kind == "list" else "reference"
+        if meta.sensitive:
+            return "secret"
+        if meta.kind == "bool":
+            return "toggle"
+        if meta.kind in {"int", "float"}:
+            return "number"
+        if meta.kind == "dict":
+            return "json"
+        if meta.kind == "list":
+            if meta.element_kind in {"dict", "list"}:
+                return "list_json"
+            return "list_text"
+        if meta.kind == "none":
+            inferred = self._infer_kind(meta.full_path, meta.default)
+            if inferred[0] in {"int", "float"}:
+                return "number"
+            return "text"
+        if meta.kind == "str":
+            leaf = meta.leaf_name.casefold()
+            raw_default = meta.default if isinstance(meta.default, str) else ""
+            if leaf.endswith("_url"):
+                return "url"
+            if any(part in leaf for part in LONG_TEXT_KEY_PARTS):
+                return "textarea"
+            if "\n" in raw_default or len(raw_default) > 140:
+                return "textarea"
+            return "text"
+        return "text"
+
+    def _safe_raw_value(self, value: Any, meta: SettingMeta) -> Any:
+        if meta.sensitive:
+            return None
+        return deepcopy(value)
+
+    def _parent_path(self, relative_path: str) -> str | None:
+        if "." not in str(relative_path):
+            return None
+        return str(relative_path).rsplit(".", 1)[0]
+
+    def _setting_label(self, meta: SettingMeta) -> str:
+        return self._humanize_key(meta.leaf_name)
+
+    def setting_payload(self, guild_id: int, meta: SettingMeta) -> dict[str, Any]:
+        current_value = self.current_value(guild_id, meta)
+        global_value = self.global_value(meta)
+        override = self.has_override(guild_id, meta.full_path)
+        return {
+            "module_key": meta.module_key,
+            "label": self._setting_label(meta),
+            "leaf_name": meta.leaf_name,
+            "relative_path": meta.relative_path,
+            "parent_path": self._parent_path(meta.relative_path),
+            "full_path": meta.full_path,
+            "kind": meta.kind,
+            "element_kind": meta.element_kind,
+            "type_label": meta.type_label,
+            "editor_kind": self.editor_kind(meta),
+            "reference_kind": self.reference_kind(meta),
+            "sensitive": meta.sensitive,
+            "override": override,
+            "current_display": self.format_value(current_value, meta, limit=300),
+            "global_display": self.format_value(global_value, meta, limit=300),
+            "current_value": self._safe_raw_value(current_value, meta),
+            "global_value": self._safe_raw_value(global_value, meta),
+            "default_value": self._safe_raw_value(meta.default, meta),
+            "has_value": current_value not in (None, "", [], {}),
+            "example": self.example_value(meta),
+        }
+
+    def module_summary_payload(self, guild_id: int, module_key: str) -> dict[str, Any]:
+        info = self._module_info(module_key)
+        metas = self.setting_metas(module_key, guild_id=guild_id)
+        override_count = sum(1 for meta in metas if self.has_override(guild_id, meta.full_path))
+        return {
+            "key": module_key,
+            "label": info["label"],
+            "emoji": info["emoji"],
+            "aliases": list(info["aliases"]),
+            "setting_count": len(metas),
+            "override_count": override_count,
+        }
+
+    def module_payloads(self, guild_id: int) -> list[dict[str, Any]]:
+        payloads = [self.module_summary_payload(guild_id, module_key) for module_key in self.module_keys()]
+        return sorted(payloads, key=lambda item: ((0 if item["override_count"] else 1), item["label"], item["key"]))
+
+    def module_payload(self, guild_id: int, module_key: str) -> dict[str, Any] | None:
+        resolved = self.resolve_module_key(module_key)
+        if not resolved:
+            return None
+        fields = [self.setting_payload(guild_id, meta) for meta in self.setting_metas(resolved, guild_id=guild_id)]
+        module = self.module_summary_payload(guild_id, resolved)
+        return {
+            "module": module,
+            "fields": fields,
+        }
 
     def setting_choices(self, guild_id: int, module_key: str, current: str) -> list[tuple[str, str]]:
         term = str(current or "").casefold().strip()

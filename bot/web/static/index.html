@@ -53,9 +53,13 @@
         <button class="nav-btn" data-view="users">Users</button>
         <button class="nav-btn" data-view="applications">Applications</button>
         <button class="nav-btn" data-view="logs">Logs</button>
-        <button class="nav-btn" data-view="settings">Settings</button>
+        <button class="nav-btn" data-view="settings">Module Setup</button>
         <button class="nav-btn" data-view="birthdays">Birthdays</button>
       </nav>
+
+      <div class="section-title">Module</div>
+      <input id="moduleSearch" class="sidebar-search" type="text" placeholder="Modul suchen">
+      <div id="moduleList" class="module-nav"></div>
     </aside>
 
     <main class="main">
@@ -68,8 +72,8 @@
           </div>
           <div class="hero-card">
             <div class="hero-kpi">Global: Tickets, Giveaways, Polls, Applications</div>
-            <div class="hero-kpi">Guild-Scoped: Settings, Logs, Aktionen</div>
-            <div class="hero-kpi">Birthdays: Global sichtbar</div>
+            <div class="hero-kpi">Guild-Scoped: Module, Messaging, Logs, Aktionen</div>
+            <div class="hero-kpi">Birthdays: Live und global sichtbar</div>
           </div>
         </div>
       </section>
@@ -78,7 +82,7 @@
         <div class="header-row">
           <div>
             <h2>Overview</h2>
-            <p class="muted">Global und pro Guild auf einen Blick.</p>
+            <p class="muted">Global, Guild und Module auf einen Blick.</p>
           </div>
           <div class="badge" id="selectedGuildLabel">Keine Guild gewählt</div>
         </div>
@@ -90,26 +94,11 @@
               <button id="refreshGlobal" class="ghost">Refresh</button>
             </div>
             <div class="metrics">
-              <div class="metric">
-                <div class="label">Tickets</div>
-                <div class="value" id="globalTickets">–</div>
-              </div>
-              <div class="metric">
-                <div class="label">Giveaways</div>
-                <div class="value" id="globalGiveaways">–</div>
-              </div>
-              <div class="metric">
-                <div class="label">Polls</div>
-                <div class="value" id="globalPolls">–</div>
-              </div>
-              <div class="metric">
-                <div class="label">Applications</div>
-                <div class="value" id="globalApps">–</div>
-              </div>
-              <div class="metric">
-                <div class="label">Birthdays</div>
-                <div class="value" id="globalBirthdays">–</div>
-              </div>
+              <div class="metric"><div class="label">Tickets</div><div class="value" id="globalTickets">–</div></div>
+              <div class="metric"><div class="label">Giveaways</div><div class="value" id="globalGiveaways">–</div></div>
+              <div class="metric"><div class="label">Polls</div><div class="value" id="globalPolls">–</div></div>
+              <div class="metric"><div class="label">Applications</div><div class="value" id="globalApps">–</div></div>
+              <div class="metric"><div class="label">Birthdays</div><div class="value" id="globalBirthdays">–</div></div>
             </div>
           </div>
 
@@ -119,46 +108,21 @@
               <button id="refreshGuild" class="ghost">Refresh</button>
             </div>
             <div class="metrics">
-              <div class="metric">
-                <div class="label">Tickets (open)</div>
-                <div class="value" id="guildTicketsOpen">–</div>
-              </div>
-              <div class="metric">
-                <div class="label">Tickets (total)</div>
-                <div class="value" id="guildTicketsTotal">–</div>
-              </div>
-              <div class="metric">
-                <div class="label">Giveaways</div>
-                <div class="value" id="guildGiveaways">–</div>
-              </div>
-              <div class="metric">
-                <div class="label">Polls</div>
-                <div class="value" id="guildPolls">–</div>
-              </div>
-              <div class="metric">
-                <div class="label">Applications</div>
-                <div class="value" id="guildApps">–</div>
-              </div>
+              <div class="metric"><div class="label">Tickets (open)</div><div class="value" id="guildTicketsOpen">–</div></div>
+              <div class="metric"><div class="label">Tickets (total)</div><div class="value" id="guildTicketsTotal">–</div></div>
+              <div class="metric"><div class="label">Giveaways</div><div class="value" id="guildGiveaways">–</div></div>
+              <div class="metric"><div class="label">Polls</div><div class="value" id="guildPolls">–</div></div>
+              <div class="metric"><div class="label">Applications</div><div class="value" id="guildApps">–</div></div>
             </div>
           </div>
         </div>
 
         <div class="card">
           <div class="card-head">
-            <h3>Module Control</h3>
-            <div class="muted">Schnellzugriff auf alle Module (Overrides).</div>
+            <h3>Module</h3>
+            <div class="muted">Direkter Einstieg in den generischen Modul-Editor.</div>
           </div>
-          <div class="module-grid">
-            <div class="module">Tickets</div>
-            <div class="module">Giveaways</div>
-            <div class="module">Polls</div>
-            <div class="module">Applications</div>
-            <div class="module">User Stats</div>
-            <div class="module">Moderation</div>
-            <div class="module">Logs</div>
-            <div class="module">TempVoice</div>
-            <div class="module">Backups</div>
-          </div>
+          <div id="moduleQuickGrid" class="module-grid"></div>
         </div>
       </section>
 
@@ -176,9 +140,7 @@
             <div id="tickets" class="list"></div>
           </div>
           <div class="card">
-            <div class="card-head">
-              <h3>Aktionen</h3>
-            </div>
+            <div class="card-head"><h3>Aktionen</h3></div>
             <div class="form-grid">
               <input id="ticketThreadId" type="text" placeholder="Thread ID">
               <input id="ticketActorId" type="text" placeholder="Staff User ID">
@@ -197,22 +159,20 @@
       </section>
 
       <section id="view-messaging" class="view hidden">
-        <div class="header-row">
-          <h2>Messaging</h2>
-        </div>
+        <div class="header-row"><h2>Messaging</h2></div>
         <div class="grid two">
           <div class="card">
-            <div class="card-head"><h3>Message</h3></div>
+            <div class="card-head"><h3>Nachricht senden</h3></div>
             <div class="form-grid">
-              <input id="msgChannelId" type="text" placeholder="Channel ID">
+              <select id="msgChannelSelect"></select>
               <textarea id="msgContent" placeholder="Nachricht"></textarea>
               <button id="sendMessage" class="primary">Senden</button>
             </div>
           </div>
           <div class="card">
-            <div class="card-head"><h3>Embed</h3></div>
+            <div class="card-head"><h3>Embed Builder</h3></div>
             <div class="form-grid">
-              <input id="embedChannelId" type="text" placeholder="Channel ID">
+              <select id="embedChannelSelect"></select>
               <input id="embedTitle" type="text" placeholder="Titel">
               <textarea id="embedDesc" placeholder="Beschreibung"></textarea>
               <textarea id="embedFields" placeholder="Fields (name|value|inline pro Zeile)"></textarea>
@@ -220,9 +180,15 @@
               <input id="embedImage" type="text" placeholder="Image URL (optional)">
               <input id="embedFooter" type="text" placeholder="Footer (optional)">
               <input id="embedColor" type="text" placeholder="Farbe (hex, optional)">
-              <button id="sendEmbed" class="primary">Senden</button>
+              <div class="setting-actions">
+                <button id="sendEmbed" class="primary">Senden</button>
+              </div>
             </div>
           </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Embed Preview</h3></div>
+          <div id="embedPreview" class="embed-preview empty-state">Fülle rechts Titel, Beschreibung oder Bilder aus.</div>
         </div>
       </section>
 
@@ -292,9 +258,7 @@
         <div class="header-row"><h2>Users</h2></div>
         <div class="grid two">
           <div class="card">
-            <div class="card-head">
-              <h3>User Suche</h3>
-            </div>
+            <div class="card-head"><h3>User Suche</h3></div>
             <div class="form-grid">
               <input id="userSearchInput" type="text" placeholder="User ID oder Name">
               <button id="userSearchBtn" class="primary">Suchen</button>
@@ -316,13 +280,11 @@
         <div class="grid two">
           <div class="card">
             <div class="card-head">
-              <h3>Konfiguration</h3>
-              <div class="tools">
-                <button id="appsReload" class="ghost">Laden</button>
-                <button id="appsApply" class="primary">Anwenden</button>
-              </div>
+              <h3>Modul-Einstellungen</h3>
+              <button id="openApplicationsModule" class="primary">Applications öffnen</button>
             </div>
-            <textarea id="applications"></textarea>
+            <p class="muted">Alle Einstellungen für Bewerbungen liegen im generischen Modul-Editor und sind dort einzeln änderbar.</p>
+            <div id="applicationsModuleHint" class="module-inline-hint"></div>
           </div>
           <div class="card">
             <div class="card-head">
@@ -337,15 +299,15 @@
       <section id="view-logs" class="view hidden">
         <div class="header-row"><h2>Logs</h2></div>
         <div class="grid two">
-          <div class="card">
-            <div class="card-head">
-              <h3>Event Logs</h3>
-              <div class="tools">
-                <button id="logsReload" class="ghost">Aktualisieren</button>
-                <button id="logsLive" class="ghost">Live verbinden</button>
-              </div>
+        <div class="card">
+          <div class="card-head">
+            <h3>Event Logs</h3>
+            <div class="tools">
+              <button id="logsReload" class="ghost">Aktualisieren</button>
+              <button id="logsLive" class="ghost">Live verbinden</button>
             </div>
-            <div id="logs" class="list"></div>
+          </div>
+          <div id="logs" class="list"></div>
           </div>
           <div class="card">
             <div class="card-head"><h3>Live Status</h3></div>
@@ -355,17 +317,27 @@
       </section>
 
       <section id="view-settings" class="view hidden">
-        <div class="header-row"><h2>Settings</h2></div>
-        <div class="card">
-          <div class="card-head">
-            <h3>Guild Overrides</h3>
-            <div class="tools">
-              <button id="prettify" class="ghost">Formatieren</button>
-              <button id="reload" class="ghost">Laden</button>
-              <button id="apply" class="primary">Anwenden</button>
-            </div>
+        <div class="header-row">
+          <div>
+            <h2>Module Setup</h2>
+            <p class="muted">Jedes Modul einzeln einstellen, ohne rohe JSON-Overrides anzufassen.</p>
           </div>
-          <textarea id="settings"></textarea>
+          <div class="tools">
+            <div class="badge" id="moduleSelectedBadge">Kein Modul gewählt</div>
+            <button id="moduleReload" class="ghost">Neu laden</button>
+          </div>
+        </div>
+
+        <div class="card module-workspace">
+          <div class="card-head module-workspace-head">
+            <div>
+              <h3 id="moduleTitle">Kein Modul gewählt</h3>
+              <div id="moduleSubtitle" class="muted">Wähle links ein Modul aus.</div>
+            </div>
+            <input id="moduleSettingSearch" type="text" placeholder="Setting suchen">
+          </div>
+          <div id="moduleStats" class="metrics compact"></div>
+          <div id="moduleSettings" class="settings-grid empty-state">Wähle links ein Modul aus, um alle Einstellungen zu sehen.</div>
         </div>
       </section>
 
@@ -387,54 +359,31 @@
             <div class="banner-sub">Automatische Gratulationen mit Live-Tracking.</div>
           </div>
           <div class="banner-stats">
-            <div class="banner-stat">
-              <div class="label">Heute</div>
-              <div class="value" id="birthdayTodayCount">–</div>
-            </div>
-            <div class="banner-stat">
-              <div class="label">Nächste</div>
-              <div class="value" id="birthdayNextCount">–</div>
-            </div>
-            <div class="banner-stat">
-              <div class="label">Booster</div>
-              <div class="value" id="birthdayBoosterCount">–</div>
-            </div>
-            <div class="banner-stat">
-              <div class="label">Gesamt</div>
-              <div class="value" id="birthdayTotalCount">–</div>
-            </div>
+            <div class="banner-stat"><div class="label">Heute</div><div class="value" id="birthdayTodayCount">–</div></div>
+            <div class="banner-stat"><div class="label">Nächste</div><div class="value" id="birthdayNextCount">–</div></div>
+            <div class="banner-stat"><div class="label">Booster</div><div class="value" id="birthdayBoosterCount">–</div></div>
+            <div class="banner-stat"><div class="label">Gesamt</div><div class="value" id="birthdayTotalCount">–</div></div>
           </div>
         </div>
 
         <div class="grid two">
           <div class="card">
-            <div class="card-head">
-              <h3>Heute</h3>
-              <div class="badge" id="birthdayTodayBadge">–</div>
-            </div>
+            <div class="card-head"><h3>Heute</h3><div class="badge" id="birthdayTodayBadge">–</div></div>
             <div id="birthdaysToday" class="list"></div>
           </div>
           <div class="card">
-            <div class="card-head">
-              <h3>Nächste</h3>
-              <div class="badge" id="birthdayNextBadge">–</div>
-            </div>
+            <div class="card-head"><h3>Nächste</h3><div class="badge" id="birthdayNextBadge">–</div></div>
             <div id="birthdaysNext" class="list"></div>
           </div>
         </div>
 
         <div class="grid two">
           <div class="card">
-            <div class="card-head">
-              <h3>Booster</h3>
-              <div class="badge" id="birthdayBoosterBadge">–</div>
-            </div>
+            <div class="card-head"><h3>Booster</h3><div class="badge" id="birthdayBoosterBadge">–</div></div>
             <div id="boosters" class="list"></div>
           </div>
           <div class="card">
-            <div class="card-head">
-              <h3>Alle Geburtstage (Global)</h3>
-            </div>
+            <div class="card-head"><h3>Alle Geburtstage (Global)</h3></div>
             <div id="birthdays" class="list"></div>
           </div>
         </div>
@@ -444,6 +393,8 @@
     </main>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app-core.js"></script>
+  <script src="/static/app-modules.js"></script>
+  <script src="/static/app-actions.js"></script>
 </body>
 </html>

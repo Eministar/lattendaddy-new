@@ -15,6 +15,7 @@ import uvicorn
 from bot.modules.tickets.services.ticket_service import TicketService
 from bot.modules.moderation.services.mod_service import ModerationService
 from bot.modules.birthdays.services.birthday_service import BirthdayService
+from bot.modules.setup.services.setup_service import SetupService, SettingMeta
 
 
 class WebServer:
@@ -25,6 +26,7 @@ class WebServer:
         self.ticket_service = TicketService(bot, settings, db, getattr(bot, "logger", None))
         self.moderation_service = ModerationService(bot, settings, db, getattr(bot, "forum_logs", None))
         self.birthday_service = getattr(bot, "birthday_service", None) or BirthdayService(bot, settings, db, getattr(bot, "logger", None))
+        self.setup_service = getattr(bot, "setup_service", None) or SetupService(settings, db)
         self.app = FastAPI()
         self._server = None
         self._task = None
@@ -134,6 +136,11 @@ class WebServer:
             await self._require_guild_access(request, guild_id)
             return JSONResponse(self.settings.dump_guild(int(guild_id)))
 
+        @self.app.get("/api/guilds/{guild_id}/meta")
+        async def get_guild_meta(request: Request, guild_id: int):
+            guild = await self._require_guild_access(request, guild_id)
+            return JSONResponse(self._guild_meta_payload(guild))
+
         @self.app.get("/api/guilds/{guild_id}/overrides")
         async def get_guild_overrides(request: Request, guild_id: int):
             await self._require_guild_access(request, guild_id)
@@ -147,6 +154,159 @@ class WebServer:
                 raise HTTPException(status_code=400, detail="Invalid settings payload")
             await self.settings.replace_guild_overrides(self.db, int(guild_id), data)
             return JSONResponse({"ok": True})
+
+
+        @self.app.get("/api/guilds/{guild_id}/resources")
+        async def get_guild_resources(request: Request, guild_id: int):
+            guild = await self._require_guild_access(request, guild_id)
+            channels = []
+            for channel in sorted(list(guild.channels), key=lambda item: (getattr(item, "position", 0), item.id)):
+                parent = getattr(channel, "category", None)
+                channels.append({
+                    "id": int(channel.id),
+                    "name": str(channel.name),
+                    "type": str(getattr(getattr(channel, "type", None), "name", "unknown")),
+                    "position": int(getattr(channel, "position", 0) or 0),
+                    "parent_id": int(parent.id) if parent else 0,
+                    "parent_name": str(parent.name) if parent else "",
+                    "mention": getattr(channel, "mention", f"<#${channel.id}>").replace('$', ''),
+                })
+            threads = []
+            for thread in sorted(list(guild.threads), key=lambda item: item.id):
+                parent = getattr(thread, "parent", None)
+                threads.append({
+                    "id": int(thread.id),
+                    "name": str(thread.name),
+                    "parent_id": int(parent.id) if parent else 0,
+                    "parent_name": str(parent.name) if parent else "",
+                    "mention": getattr(thread, "mention", f"<#${thread.id}>").replace('$', ''),
+                })
+            roles = []
+            for role in sorted(list(guild.roles), key=lambda item: item.position, reverse=True):
+                if role.is_default():
+                    continue
+                roles.append({
+                    "id": int(role.id),
+                    "name": str(role.name),
+                    "position": int(role.position or 0),
+                    "mention": str(role.mention),
+                    "color": str(role.color),
+                })
+            members = []
+            for member in sorted(list(guild.members), key=lambda item: item.display_name.casefold()):
+                avatar_url = ""
+                try:
+                    avatar_url = str(member.display_avatar.replace(size=128, format="webp").url)
+                except Exception:
+                    try:
+                        avatar_url = str(member.display_avatar.url)
+                    except Exception:
+                        avatar_url = ""
+                members.append({
+                    "id": int(member.id),
+                    "name": str(member.name),
+                    "display_name": str(member.display_name),
+                    "mention": str(member.mention),
+                    "avatar_url": avatar_url,
+                })
+            return JSONResponse({
+                "guild": {
+                    "id": int(guild.id),
+                    "name": str(guild.name),
+                },
+                "channels": channels,
+                "threads": threads,
+                "roles": roles,
+                "members": members,
+            })
+
+        @self.app.get("/api/guilds/{guild_id}/modules")
+        async def list_modules(request: Request, guild_id: int):
+            await self._require_guild_access(request, guild_id)
+            payload = [
+                self._serialize_setup_module(int(guild_id), module_key, include_settings=False)
+                for module_key in self.setup_service.module_keys()
+            ]
+            return JSONResponse(payload)
+
+        @self.app.get("/api/guilds/{guild_id}/modules/{module_key}")
+        async def get_module(request: Request, guild_id: int, module_key: str):
+            await self._require_guild_access(request, guild_id)
+            resolved = self.setup_service.resolve_module_key(module_key)
+            if not resolved:
+                raise HTTPException(status_code=404, detail="Module not found")
+            return JSONResponse(self._serialize_setup_module(int(guild_id), resolved, include_settings=True))
+
+        @self.app.post("/api/guilds/{guild_id}/modules/{module_key}/set")
+        async def set_module_setting(request: Request, guild_id: int, module_key: str):
+            await self._require_guild_access(request, guild_id)
+            data = await request.json()
+            _resolved, meta = self._require_setup_meta(int(guild_id), module_key, data.get("setting"))
+            try:
+                _value, message = await self.setup_service.set_value(
+                    int(guild_id),
+                    meta,
+                    self._setup_raw_value(data.get("value")),
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            return JSONResponse({
+                "ok": True,
+                "message": message,
+                "setting": self._serialize_setup_setting(int(guild_id), meta),
+            })
+
+        @self.app.post("/api/guilds/{guild_id}/modules/{module_key}/add")
+        async def add_module_setting(request: Request, guild_id: int, module_key: str):
+            await self._require_guild_access(request, guild_id)
+            data = await request.json()
+            _resolved, meta = self._require_setup_meta(int(guild_id), module_key, data.get("setting"))
+            try:
+                _value, message = await self.setup_service.add_list_values(
+                    int(guild_id),
+                    meta,
+                    self._setup_raw_value(data.get("value")),
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            return JSONResponse({
+                "ok": True,
+                "message": message,
+                "setting": self._serialize_setup_setting(int(guild_id), meta),
+            })
+
+        @self.app.post("/api/guilds/{guild_id}/modules/{module_key}/remove")
+        async def remove_module_setting(request: Request, guild_id: int, module_key: str):
+            await self._require_guild_access(request, guild_id)
+            data = await request.json()
+            _resolved, meta = self._require_setup_meta(int(guild_id), module_key, data.get("setting"))
+            try:
+                _value, message = await self.setup_service.remove_list_values(
+                    int(guild_id),
+                    meta,
+                    self._setup_raw_value(data.get("value")),
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            return JSONResponse({
+                "ok": True,
+                "message": message,
+                "setting": self._serialize_setup_setting(int(guild_id), meta),
+            })
+
+        @self.app.post("/api/guilds/{guild_id}/modules/{module_key}/reset")
+        async def reset_module_setting(request: Request, guild_id: int, module_key: str):
+            await self._require_guild_access(request, guild_id)
+            data = await request.json()
+            _resolved, meta = self._require_setup_meta(int(guild_id), module_key, data.get("setting"))
+            changed, message = await self.setup_service.reset_value(int(guild_id), meta)
+            return JSONResponse({
+                "ok": True,
+                "changed": bool(changed),
+                "message": message,
+                "setting": self._serialize_setup_setting(int(guild_id), meta),
+            })
+
 
         @self.app.get("/api/guilds/{guild_id}/tickets")
         async def list_tickets(request: Request, guild_id: int, limit: int = 200):
@@ -504,6 +664,84 @@ class WebServer:
         except Exception:
             return 0
 
+    @staticmethod
+    def _channel_sort_key(channel: discord.abc.GuildChannel):
+        return (getattr(channel, "position", 0), getattr(channel, "id", 0))
+
+    def _guild_meta_payload(self, guild: discord.Guild) -> dict:
+        channels = []
+        for channel in sorted(list(guild.channels), key=self._channel_sort_key):
+            category = getattr(channel, "category", None)
+            channels.append({
+                "id": channel.id,
+                "name": channel.name,
+                "type": str(channel.type),
+                "position": int(getattr(channel, "position", 0)),
+                "category_id": getattr(category, "id", None),
+                "category_name": getattr(category, "name", None),
+                "messageable": isinstance(channel, discord.TextChannel),
+                "label": f"#{channel.name}" if hasattr(channel, "name") else str(channel.id),
+            })
+
+        threads = []
+        for thread in sorted(list(guild.threads), key=lambda item: item.id):
+            parent = getattr(thread, "parent", None)
+            threads.append({
+                "id": thread.id,
+                "name": thread.name,
+                "parent_id": getattr(parent, "id", None),
+                "parent_name": getattr(parent, "name", None),
+                "archived": bool(getattr(thread, "archived", False)),
+            })
+
+        roles = []
+        for role in sorted(list(guild.roles), key=lambda item: item.position, reverse=True):
+            if role.is_default():
+                continue
+            roles.append({
+                "id": role.id,
+                "name": role.name,
+                "position": role.position,
+                "managed": role.managed,
+                "mentionable": role.mentionable,
+                "color": f"#{role.color.value:06x}",
+            })
+
+        all_members = sorted(list(guild.members), key=lambda item: item.display_name.casefold())
+        members = []
+        for member in all_members[:500]:
+            try:
+                avatar_url = member.display_avatar.url
+            except Exception:
+                avatar_url = None
+            members.append({
+                "id": member.id,
+                "name": member.name,
+                "display_name": member.display_name,
+                "bot": member.bot,
+                "avatar_url": avatar_url,
+            })
+
+        icon_url = None
+        try:
+            icon_url = guild.icon.url if guild.icon else None
+        except Exception:
+            icon_url = None
+
+        return {
+            "guild": {
+                "id": guild.id,
+                "name": guild.name,
+                "icon_url": icon_url,
+                "member_count": guild.member_count,
+            },
+            "channels": channels,
+            "threads": threads,
+            "roles": roles,
+            "members": members,
+            "members_truncated": len(all_members) > 500,
+        }
+
     def dashboard_port(self) -> int:
         try:
             return int(self.settings.get("bot.dashboard.port", 8787) or 8787)
@@ -546,6 +784,75 @@ class WebServer:
         if host == "0.0.0.0":
             host = "127.0.0.1"
         return f"http://{host}:{port}"
+
+    def _selector_type(self, meta: SettingMeta) -> str | None:
+        leaf = str(meta.leaf_name or "")
+        if leaf.endswith("_channel_id") or leaf.endswith("_channel_ids"):
+            return "channel"
+        if leaf.endswith("_thread_id") or leaf.endswith("_thread_ids"):
+            return "thread"
+        if leaf.endswith("_role_id") or leaf.endswith("_role_ids"):
+            return "role"
+        if leaf.endswith("_user_id") or leaf.endswith("_user_ids"):
+            return "user"
+        return None
+
+    def _setup_raw_value(self, value) -> str:
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return str(value)
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        if value is None:
+            return ""
+        return str(value)
+
+    def _serialize_setup_setting(self, guild_id: int, meta: SettingMeta) -> dict:
+        current_value = self.setup_service.current_value(int(guild_id), meta)
+        global_value = self.setup_service.global_value(meta)
+        sensitive = bool(meta.sensitive)
+        return {
+            "module_key": meta.module_key,
+            "relative_path": meta.relative_path,
+            "full_path": meta.full_path,
+            "leaf_name": meta.leaf_name,
+            "kind": meta.kind,
+            "element_kind": meta.element_kind,
+            "type_label": meta.type_label,
+            "selector_type": self._selector_type(meta),
+            "sensitive": sensitive,
+            "has_override": bool(self.setup_service.has_override(int(guild_id), meta.full_path)),
+            "example": self.setup_service.example_value(meta),
+            "current_display": self.setup_service.format_value(current_value, meta, limit=400),
+            "global_display": self.setup_service.format_value(global_value, meta, limit=400),
+            "current_value": None if sensitive else current_value,
+            "global_value": None if sensitive else global_value,
+        }
+
+    def _serialize_setup_module(self, guild_id: int, module_key: str, *, include_settings: bool) -> dict:
+        info = self.setup_service._module_info(module_key)
+        metas = self.setup_service.setting_metas(module_key, guild_id=int(guild_id))
+        payload = {
+            "key": module_key,
+            "label": info["label"],
+            "emoji": info["emoji"],
+            "aliases": list(info["aliases"]),
+            "settings_total": len(metas),
+            "override_total": sum(1 for meta in metas if self.setup_service.has_override(int(guild_id), meta.full_path)),
+        }
+        if include_settings:
+            payload["settings"] = [self._serialize_setup_setting(int(guild_id), meta) for meta in metas]
+        return payload
+
+    def _require_setup_meta(self, guild_id: int, module_key: str, setting: str | None) -> tuple[str, SettingMeta]:
+        resolved = self.setup_service.resolve_module_key(module_key)
+        if not resolved:
+            raise HTTPException(status_code=404, detail="Module not found")
+        meta = self.setup_service.resolve_setting_meta(resolved, setting, guild_id=int(guild_id))
+        if meta is None:
+            raise HTTPException(status_code=404, detail="Setting not found")
+        return resolved, meta
 
     def _discord_oauth_url(self) -> str:
         client_id = str(self.settings.get("bot.dashboard.client_id", "") or "").strip()
@@ -672,6 +979,7 @@ class WebServer:
                 "id": gid,
                 "name": g.get("name") or bot_guild.name,
                 "icon": g.get("icon"),
+                "icon_url": f"https://cdn.discordapp.com/icons/{gid}/{g.get('icon')}.webp?size=128" if g.get("icon") else None,
                 "owner": is_owner,
                 "permissions": perms,
                 "bot_in_guild": True,
