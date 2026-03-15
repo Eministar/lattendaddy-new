@@ -80,7 +80,10 @@ body {
   display: flex; gap: 12px; align-items: center; background: var(--panel);
   padding: 10px 12px; border-radius: 14px;
 }
-.user img { width: 40px; height: 40px; border-radius: 12px; background: #2e2e3a; object-fit: cover; }
+.user img {
+  width: 46px; height: 46px; border-radius: 14px; background: #2e2e3a; object-fit: cover;
+  border: 1px solid rgba(248, 214, 111, 0.18);
+}
 .user-name { font-weight: 600; }
 .user-meta { font-size: 12px; color: var(--muted); }
 
@@ -107,6 +110,20 @@ body {
 .guild-icon {
   width: 28px; height: 28px; border-radius: 9px; background: #2a2a3a;
   background-size: cover; background-position: center;
+  display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #f6f2de;
+}
+
+.guild-icon.has-image {
+  color: transparent;
+}
+
+.guild-icon.is-fallback {
+  background: linear-gradient(135deg, rgba(248, 214, 111, 0.28), rgba(255, 143, 107, 0.24));
+}
+
+.guild-name {
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 .module-nav-btn {

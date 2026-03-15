@@ -8,6 +8,7 @@ const state = window.state = {
   modules: [],
   moduleKey: null,
   moduleDetail: null,
+  moduleError: null,
 };
 
 let ticketCache = window.ticketCache = [];
@@ -110,14 +111,41 @@ window.requireGuild = function requireGuild() {
   return state.guildId;
 };
 
+window.defaultAvatarUrlForUser = function defaultAvatarUrlForUser(user) {
+  try {
+    const rawId = BigInt(String(user?.id || 0));
+    const index = Number((rawId >> 22n) % 6n);
+    return `https://cdn.discordapp.com/embed/avatars/${index}.png`;
+  } catch (_err) {
+    return "https://cdn.discordapp.com/embed/avatars/0.png";
+  }
+};
+
 window.avatarUrlForUser = function avatarUrlForUser(user) {
-  if (!user || !user.avatar) return "";
-  return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.webp?size=128`;
+  if (!user) return defaultAvatarUrlForUser(null);
+  if (user.avatar_url) return String(user.avatar_url);
+  if (user.avatar) {
+    const ext = String(user.avatar).startsWith("a_") ? "gif" : "webp";
+    return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=128`;
+  }
+  return defaultAvatarUrlForUser(user);
 };
 
 window.guildIconUrl = function guildIconUrl(guild) {
-  if (!guild || !guild.icon) return "";
-  return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.webp?size=128`;
+  if (!guild) return "";
+  if (guild.icon_url) return String(guild.icon_url);
+  if (guild.icon) return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.webp?size=128`;
+  return "";
+};
+
+window.initials = function initials(value, fallback = "★") {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (!parts.length) return fallback;
+  return parts.map((part) => part[0]).join("").toUpperCase();
 };
 
 window.updateGuildLabels = function updateGuildLabels() {
@@ -138,9 +166,15 @@ window.renderGuilds = function renderGuilds() {
     const item = createElement("div", `guild-item${state.guildId === guild.id ? " active" : ""}`);
     const icon = createElement("div", "guild-icon");
     const iconUrl = guildIconUrl(guild);
-    if (iconUrl) icon.style.backgroundImage = `url(${iconUrl})`;
+    if (iconUrl) {
+      icon.style.backgroundImage = `url(${iconUrl})`;
+      icon.classList.add("has-image");
+    } else {
+      icon.textContent = initials(guild.name, "★");
+      icon.classList.add("is-fallback");
+    }
     item.appendChild(icon);
-    item.appendChild(createElement("div", null, guild.name));
+    item.appendChild(createElement("div", "guild-name", guild.name));
     item.onclick = () => selectGuild(guild.id);
     root.appendChild(item);
   }
@@ -468,7 +502,14 @@ window.loadBirthdays = async function loadBirthdays() {
   }
   data.items.forEach((row) => {
     const div = createElement("div", "list-item");
-    div.innerHTML = `<strong>${escapeHtml(memberLabel(row.user_id))}</strong><div class="list-meta">${escapeHtml(`${row.day}.${row.month}.${row.year}`)}</div>`;
+    const label = row.display_name || row.username || memberLabel(row.user_id);
+    div.innerHTML = `
+      <div class="inline-identity">
+        <img class="avatar-chip" src="${escapeHtml(row.avatar_url || defaultAvatarUrlForUser({ id: row.user_id }))}" alt="Avatar">
+        <strong>${escapeHtml(label)}</strong>
+      </div>
+      <div class="list-meta">${escapeHtml(`${row.day}.${row.month}.${row.year}`)} · ${escapeHtml(String(row.user_id))}</div>
+    `;
     root.appendChild(div);
   });
 };
@@ -504,14 +545,20 @@ window.loadBirthdaySummary = async function loadBirthdaySummary() {
 };
 
 window.refreshGuildData = async function refreshGuildData() {
-  await Promise.all([
+  const tasks = [
     loadGuildSummary(),
     loadResources(),
     loadTickets(),
     loadApplicationsList(),
-    loadBirthdaySummary().catch(() => null),
+    loadBirthdaySummary(),
     window.loadModules ? loadModules() : Promise.resolve(),
-  ]);
+  ];
+  const results = await Promise.allSettled(tasks);
+  const failed = results.filter((result) => result.status === "rejected");
+  if (failed.length) {
+    const first = failed[0];
+    throw new Error(first.reason?.message || "Ein Teil der Guild-Daten konnte nicht geladen werden");
+  }
 };
 
 window.selectGuild = async function selectGuild(guildId) {
@@ -533,15 +580,21 @@ window.initDashboard = async function initDashboard() {
     state.user = me.user;
     state.guilds = me.guilds || [];
     setAuthState(true);
-    $("userName").textContent = me.user.username;
+    $("userName").textContent = me.user.display_name || me.user.username;
     const avatar = avatarUrlForUser(me.user);
-    if (avatar) $("userAvatar").src = avatar;
+    $("userAvatar").src = avatar;
+    $("userAvatar").alt = `${me.user.display_name || me.user.username} Avatar`;
+    $("userAvatar").onerror = () => {
+      $("userAvatar").src = defaultAvatarUrlForUser(me.user);
+    };
     renderGuilds();
     if (window.renderModuleSidebar) renderModuleSidebar();
     if (window.renderQuickModules) renderQuickModules();
     const rememberedGuild = Number(localStorage.getItem("starry_guild"));
     if (rememberedGuild && state.guilds.find((guild) => guild.id === rememberedGuild)) {
       await selectGuild(rememberedGuild);
+    } else if (state.guilds.length) {
+      await selectGuild(state.guilds[0].id);
     }
     await loadGlobalSummary();
     renderEmbedPreview();

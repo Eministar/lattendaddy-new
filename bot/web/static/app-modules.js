@@ -6,9 +6,82 @@ window.requireModule = function requireModule() {
   return state.moduleKey;
 };
 
+window.normalizeModuleSetting = function normalizeModuleSetting(setting) {
+  if (!setting || typeof setting !== "object") return null;
+  return {
+    ...setting,
+    label: setting.label || setting.leaf_name || setting.relative_path || "Setting",
+    selector_type: setting.selector_type || setting.reference_kind || null,
+    has_override: Boolean(setting.has_override ?? setting.override),
+    current_display: setting.current_display ?? text(setting.current_value, "–"),
+    global_display: setting.global_display ?? text(setting.global_value, "–"),
+  };
+};
+
+window.normalizeModuleSummary = function normalizeModuleSummary(module) {
+  if (!module || typeof module !== "object") return null;
+  const source = module.module && typeof module.module === "object" ? module.module : module;
+  return {
+    key: source.key || source.module_key || null,
+    label: source.label || source.name || source.key || "Modul",
+    emoji: source.emoji || "⚙️",
+    aliases: Array.isArray(source.aliases) ? source.aliases : [],
+    settings_total: source.settings_total ?? source.setting_count ?? (Array.isArray(source.settings) ? source.settings.length : Array.isArray(module.fields) ? module.fields.length : 0),
+    override_total: source.override_total ?? source.override_count ?? 0,
+  };
+};
+
+window.normalizeModuleList = function normalizeModuleList(payload) {
+  const list = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.modules)
+      ? payload.modules
+      : Array.isArray(payload?.items)
+        ? payload.items
+        : [];
+  return list
+    .map((item) => normalizeModuleSummary(item))
+    .filter((item) => item && item.key);
+};
+
+window.normalizeModuleDetail = function normalizeModuleDetail(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const base = normalizeModuleSummary(payload);
+  if (!base) return null;
+  const rawSettings = Array.isArray(payload.settings)
+    ? payload.settings
+    : Array.isArray(payload.fields)
+      ? payload.fields
+      : [];
+  return {
+    ...base,
+    settings: rawSettings.map((item) => normalizeModuleSetting(item)).filter(Boolean),
+  };
+};
+
+window.fetchModulesPayload = async function fetchModulesPayload(gid) {
+  try {
+    return await api(`/api/guilds/${gid}/modules`);
+  } catch (_err) {
+    return api(`/api/guilds/${gid}/setup/modules`);
+  }
+};
+
+window.fetchModuleDetailPayload = async function fetchModuleDetailPayload(gid, moduleKey) {
+  try {
+    return await api(`/api/guilds/${gid}/modules/${encodeURIComponent(moduleKey)}`);
+  } catch (_err) {
+    return api(`/api/guilds/${gid}/setup/modules/${encodeURIComponent(moduleKey)}`);
+  }
+};
+
 window.renderModuleSidebar = function renderModuleSidebar() {
   const root = $("moduleList");
   root.innerHTML = "";
+  if (state.moduleError) {
+    root.innerHTML = `<div class="muted">${escapeHtml(state.moduleError)}</div>`;
+    return;
+  }
   const query = $("moduleSearch").value.trim().toLowerCase();
   const modules = state.modules.filter((module) => {
     if (!query) return true;
@@ -37,6 +110,10 @@ window.renderModuleSidebar = function renderModuleSidebar() {
 window.renderQuickModules = function renderQuickModules() {
   const root = $("moduleQuickGrid");
   root.innerHTML = "";
+  if (state.moduleError) {
+    root.innerHTML = `<div class="empty-state">${escapeHtml(state.moduleError)}</div>`;
+    return;
+  }
   if (!state.modules.length) {
     root.innerHTML = '<div class="empty-state">Noch keine Module geladen.</div>';
     return;
@@ -55,6 +132,7 @@ window.renderQuickModules = function renderQuickModules() {
 
 window.renderApplicationsHint = function renderApplicationsHint() {
   const hint = $("applicationsModuleHint");
+  if (!hint) return;
   const module = state.modules.find((entry) => entry.key === "applications") || null;
   hint.textContent = module
     ? `${module.override_total || 0} Guild-Overrides bei ${module.settings_total || 0} Settings.`
@@ -63,10 +141,11 @@ window.renderApplicationsHint = function renderApplicationsHint() {
 
 window.selectorItems = function selectorItems(setting) {
   if (!state.resources) return [];
-  if (setting.selector_type === "channel") return state.resources.channels || [];
-  if (setting.selector_type === "thread") return state.resources.threads || [];
-  if (setting.selector_type === "role") return state.resources.roles || [];
-  if (setting.selector_type === "user") return state.resources.members || [];
+  const selectorType = setting.selector_type || setting.reference_kind;
+  if (selectorType === "channel") return state.resources.channels || [];
+  if (selectorType === "thread") return state.resources.threads || [];
+  if (selectorType === "role") return state.resources.roles || [];
+  if (selectorType === "user") return state.resources.members || [];
   return [];
 };
 
@@ -177,8 +256,8 @@ window.buildSettingCard = function buildSettingCard(setting) {
   card.innerHTML = `
     <div class="setting-head">
       <div>
-        <div class="setting-path">${escapeHtml(setting.relative_path)}</div>
-        <div class="setting-type">${escapeHtml(setting.type_label)}${setting.selector_type ? ` · ${escapeHtml(setting.selector_type)}` : ""}</div>
+        <div class="setting-path">${escapeHtml(setting.label || setting.relative_path)}</div>
+        <div class="setting-type">${escapeHtml(setting.relative_path)} · ${escapeHtml(setting.type_label)}${setting.selector_type ? ` · ${escapeHtml(setting.selector_type)}` : ""}</div>
       </div>
       <div class="${sourceClass}">${setting.has_override ? "Guild-Override" : "Global"}</div>
     </div>
@@ -282,10 +361,10 @@ window.renderModuleEditor = function renderModuleEditor() {
   settingsRoot.innerHTML = "";
   if (!detail) {
     $("moduleTitle").textContent = "Kein Modul gewählt";
-    $("moduleSubtitle").textContent = "Wähle links ein Modul aus.";
+    $("moduleSubtitle").textContent = state.moduleError || "Wähle links ein Modul aus.";
     $("moduleSelectedBadge").textContent = "Kein Modul gewählt";
     $("moduleStats").innerHTML = "";
-    settingsRoot.innerHTML = '<div class="empty-state">Wähle links ein Modul aus, um alle Einstellungen zu sehen.</div>';
+    settingsRoot.innerHTML = `<div class="empty-state">${escapeHtml(state.moduleError || "Wähle links ein Modul aus, um alle Einstellungen zu sehen.")}</div>`;
     return;
   }
   $("moduleTitle").textContent = `${detail.emoji || "⚙️"} ${detail.label}`;
@@ -295,7 +374,7 @@ window.renderModuleEditor = function renderModuleEditor() {
   const query = $("moduleSettingSearch").value.trim().toLowerCase();
   const settings = (detail.settings || []).filter((setting) => {
     if (!query) return true;
-    const haystack = [setting.relative_path, setting.full_path, setting.leaf_name, setting.type_label].join(" ").toLowerCase();
+    const haystack = [setting.label, setting.relative_path, setting.full_path, setting.leaf_name, setting.type_label].join(" ").toLowerCase();
     return haystack.includes(query);
   });
   if (!settings.length) {
@@ -307,7 +386,20 @@ window.renderModuleEditor = function renderModuleEditor() {
 
 window.loadModules = async function loadModules() {
   const gid = requireGuild();
-  state.modules = await api(`/api/guilds/${gid}/modules`);
+  try {
+    const payload = await fetchModulesPayload(gid);
+    state.modules = normalizeModuleList(payload);
+    state.moduleError = state.modules.length ? null : "Es wurden keine Module vom Server geliefert.";
+  } catch (err) {
+    state.modules = [];
+    state.moduleDetail = null;
+    state.moduleError = err.message || "Module konnten nicht geladen werden.";
+    renderModuleSidebar();
+    renderQuickModules();
+    renderApplicationsHint();
+    renderModuleEditor();
+    throw err;
+  }
   renderModuleSidebar();
   renderQuickModules();
   renderApplicationsHint();
@@ -328,7 +420,11 @@ window.loadModuleDetail = async function loadModuleDetail(moduleKey, silent = fa
   const gid = requireGuild();
   state.moduleKey = moduleKey;
   localStorage.setItem("starry_module", moduleKey);
-  state.moduleDetail = await api(`/api/guilds/${gid}/modules/${encodeURIComponent(moduleKey)}`);
+  const payload = await fetchModuleDetailPayload(gid, moduleKey);
+  state.moduleDetail = normalizeModuleDetail(payload);
+  if (!state.moduleDetail) {
+    throw new Error("Modul-Details konnten nicht gelesen werden");
+  }
   renderModuleSidebar();
   renderQuickModules();
   renderApplicationsHint();
@@ -349,7 +445,17 @@ window.moduleAction = async function moduleAction(action, setting, value = null)
   const moduleKey = requireModule();
   const payload = { setting };
   if (value !== null && value !== undefined) payload.value = value;
-  const response = await postJson(`/api/guilds/${gid}/modules/${encodeURIComponent(moduleKey)}/${action}`, payload);
+  let response;
+  try {
+    response = await postJson(`/api/guilds/${gid}/modules/${encodeURIComponent(moduleKey)}/${action}`, payload);
+  } catch (_err) {
+    response = await postJson(`/api/guilds/${gid}/setup/action`, {
+      module: moduleKey,
+      action,
+      setting,
+      value,
+    });
+  }
   toast(response.message || "Gespeichert");
   await loadModules();
   return response;

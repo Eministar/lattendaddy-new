@@ -229,6 +229,11 @@ class WebServer:
             ]
             return JSONResponse(payload)
 
+        @self.app.get("/api/guilds/{guild_id}/setup/modules")
+        async def list_modules_legacy(request: Request, guild_id: int):
+            await self._require_guild_access(request, guild_id)
+            return JSONResponse(self.setup_service.module_payloads(int(guild_id)))
+
         @self.app.get("/api/guilds/{guild_id}/modules/{module_key}")
         async def get_module(request: Request, guild_id: int, module_key: str):
             await self._require_guild_access(request, guild_id)
@@ -236,6 +241,14 @@ class WebServer:
             if not resolved:
                 raise HTTPException(status_code=404, detail="Module not found")
             return JSONResponse(self._serialize_setup_module(int(guild_id), resolved, include_settings=True))
+
+        @self.app.get("/api/guilds/{guild_id}/setup/modules/{module_key}")
+        async def get_module_legacy(request: Request, guild_id: int, module_key: str):
+            await self._require_guild_access(request, guild_id)
+            payload = self.setup_service.module_payload(int(guild_id), module_key)
+            if not payload:
+                raise HTTPException(status_code=404, detail="Module not found")
+            return JSONResponse(payload)
 
         @self.app.post("/api/guilds/{guild_id}/modules/{module_key}/set")
         async def set_module_setting(request: Request, guild_id: int, module_key: str):
@@ -300,6 +313,50 @@ class WebServer:
             data = await request.json()
             _resolved, meta = self._require_setup_meta(int(guild_id), module_key, data.get("setting"))
             changed, message = await self.setup_service.reset_value(int(guild_id), meta)
+            return JSONResponse({
+                "ok": True,
+                "changed": bool(changed),
+                "message": message,
+                "setting": self._serialize_setup_setting(int(guild_id), meta),
+            })
+
+        @self.app.post("/api/guilds/{guild_id}/setup/action")
+        async def setup_action_legacy(request: Request, guild_id: int):
+            await self._require_guild_access(request, guild_id)
+            data = await request.json()
+            module_key = str(data.get("module") or data.get("module_key") or "").strip()
+            action = str(data.get("action") or "").strip().lower()
+            _resolved, meta = self._require_setup_meta(int(guild_id), module_key, data.get("setting"))
+
+            try:
+                if action == "set":
+                    _value, message = await self.setup_service.set_value(
+                        int(guild_id),
+                        meta,
+                        self._setup_raw_value(data.get("value")),
+                    )
+                    changed = True
+                elif action == "add":
+                    _value, message = await self.setup_service.add_list_values(
+                        int(guild_id),
+                        meta,
+                        self._setup_raw_value(data.get("value")),
+                    )
+                    changed = True
+                elif action == "remove":
+                    _value, message = await self.setup_service.remove_list_values(
+                        int(guild_id),
+                        meta,
+                        self._setup_raw_value(data.get("value")),
+                    )
+                    changed = True
+                elif action == "reset":
+                    changed, message = await self.setup_service.reset_value(int(guild_id), meta)
+                else:
+                    raise HTTPException(status_code=400, detail="Unsupported setup action")
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
             return JSONResponse({
                 "ok": True,
                 "changed": bool(changed),
@@ -391,7 +448,18 @@ class WebServer:
             await self._require_session(request)
             rows = await self.db.list_birthdays_global(limit=limit, offset=offset)
             total = await self.db.count_birthdays_global()
-            out = [{"user_id": r[0], "day": r[1], "month": r[2], "year": r[3]} for r in rows]
+            out = []
+            for r in rows:
+                user_payload = await self._user_brief(r[0])
+                out.append({
+                    "user_id": r[0],
+                    "day": r[1],
+                    "month": r[2],
+                    "year": r[3],
+                    "username": user_payload["username"],
+                    "display_name": user_payload["display_name"],
+                    "avatar_url": user_payload["avatar_url"],
+                })
             return JSONResponse({"total": total, "items": out})
 
         @self.app.get("/api/guilds/{guild_id}/birthdays/live")
@@ -742,6 +810,63 @@ class WebServer:
             "members_truncated": len(all_members) > 500,
         }
 
+    @staticmethod
+    def _default_avatar_url(user_id: int) -> str:
+        try:
+            index = (int(user_id) >> 22) % 6
+        except Exception:
+            index = 0
+        return f"https://cdn.discordapp.com/embed/avatars/{index}.png"
+
+    def _avatar_url_from_hash(self, user_id: int, avatar_hash: str | None) -> str:
+        avatar = str(avatar_hash or "").strip()
+        if not avatar:
+            return self._default_avatar_url(user_id)
+        ext = "gif" if avatar.startswith("a_") else "webp"
+        return f"https://cdn.discordapp.com/avatars/{int(user_id)}/{avatar}.{ext}?size=128"
+
+    async def _user_brief(self, user_id: int) -> dict:
+        uid = int(user_id)
+        user = self.bot.get_user(uid)
+        if user is None:
+            for guild in self.bot.guilds:
+                member = guild.get_member(uid)
+                if member is not None:
+                    user = member
+                    break
+        if user is None:
+            try:
+                user = await self.bot.fetch_user(uid)
+            except Exception:
+                user = None
+
+        username = None
+        display_name = f"User {uid}"
+        avatar_url = self._default_avatar_url(uid)
+
+        if user is not None:
+            username = str(getattr(user, "name", "") or "") or None
+            display_name = str(
+                getattr(user, "display_name", None)
+                or getattr(user, "global_name", None)
+                or getattr(user, "name", None)
+                or display_name
+            )
+            try:
+                avatar_url = str(user.display_avatar.replace(size=128, format="webp").url)
+            except Exception:
+                try:
+                    avatar_url = str(user.display_avatar.url)
+                except Exception:
+                    avatar_url = self._default_avatar_url(uid)
+
+        return {
+            "id": uid,
+            "username": username,
+            "display_name": display_name,
+            "avatar_url": avatar_url,
+        }
+
     def dashboard_port(self) -> int:
         try:
             return int(self.settings.get("bot.dashboard.port", 8787) or 8787)
@@ -951,11 +1076,14 @@ class WebServer:
         }
 
     def _session_payload(self, session: dict) -> dict:
+        user_id = int(session["user_id"])
         return {
             "user": {
-                "id": session["user_id"],
+                "id": user_id,
                 "username": session["username"],
                 "avatar": session.get("avatar") or None,
+                "avatar_url": self._avatar_url_from_hash(user_id, session.get("avatar")),
+                "display_name": session["username"],
             },
             "guilds": self._accessible_guilds(session),
         }
@@ -975,11 +1103,20 @@ class WebServer:
             bot_guild = self.bot.get_guild(gid)
             if not bot_guild:
                 continue
+            icon_hash = g.get("icon")
+            icon_url = None
+            if icon_hash:
+                icon_url = f"https://cdn.discordapp.com/icons/{gid}/{icon_hash}.webp?size=128"
+            elif getattr(bot_guild, "icon", None):
+                try:
+                    icon_url = str(bot_guild.icon.url)
+                except Exception:
+                    icon_url = None
             out.append({
                 "id": gid,
                 "name": g.get("name") or bot_guild.name,
-                "icon": g.get("icon"),
-                "icon_url": f"https://cdn.discordapp.com/icons/{gid}/{g.get('icon')}.webp?size=128" if g.get("icon") else None,
+                "icon": icon_hash,
+                "icon_url": icon_url,
                 "owner": is_owner,
                 "permissions": perms,
                 "bot_in_guild": True,
