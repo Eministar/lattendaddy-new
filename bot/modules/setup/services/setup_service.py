@@ -420,6 +420,17 @@ class SetupService:
     def _safe_raw_value(self, value: Any, meta: SettingMeta) -> Any:
         if meta.sensitive:
             return None
+        return self._json_safe_raw(value)
+
+    def _json_safe_raw(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {str(key): self._json_safe_raw(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._json_safe_raw(item) for item in value]
+        if isinstance(value, tuple):
+            return [self._json_safe_raw(item) for item in value]
+        if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 9_007_199_254_740_991:
+            return str(value)
         return deepcopy(value)
 
     def _parent_path(self, relative_path: str) -> str | None:

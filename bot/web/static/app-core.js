@@ -100,7 +100,7 @@ window.setAuthState = function setAuthState(loggedIn) {
 };
 
 window.selectedGuild = function selectedGuild() {
-  return state.guilds.find((guild) => guild.id === state.guildId) || null;
+  return state.guilds.find((guild) => String(guild.id) === String(state.guildId)) || null;
 };
 
 window.requireGuild = function requireGuild() {
@@ -163,7 +163,7 @@ window.renderGuilds = function renderGuilds() {
     return;
   }
   for (const guild of state.guilds) {
-    const item = createElement("div", `guild-item${state.guildId === guild.id ? " active" : ""}`);
+    const item = createElement("div", `guild-item${String(state.guildId) === String(guild.id) ? " active" : ""}`);
     const icon = createElement("div", "guild-icon");
     const iconUrl = guildIconUrl(guild);
     if (iconUrl) {
@@ -175,7 +175,7 @@ window.renderGuilds = function renderGuilds() {
     }
     item.appendChild(icon);
     item.appendChild(createElement("div", "guild-name", guild.name));
-    item.onclick = () => selectGuild(guild.id);
+    item.onclick = () => selectGuild(String(guild.id));
     root.appendChild(item);
   }
 };
@@ -562,9 +562,9 @@ window.refreshGuildData = async function refreshGuildData() {
 };
 
 window.selectGuild = async function selectGuild(guildId) {
-  state.guildId = guildId;
+  state.guildId = String(guildId);
   state.resources = null;
-  localStorage.setItem("starry_guild", String(guildId));
+  localStorage.setItem("starry_guild", state.guildId);
   renderGuilds();
   updateGuildLabels();
   try {
@@ -577,24 +577,24 @@ window.selectGuild = async function selectGuild(guildId) {
 window.initDashboard = async function initDashboard() {
   try {
     const me = await api("/api/me");
-    state.user = me.user;
-    state.guilds = me.guilds || [];
+    state.user = me.user ? { ...me.user, id: String(me.user.id || "") } : null;
+    state.guilds = (me.guilds || []).map((guild) => ({ ...guild, id: String(guild.id || "") }));
     setAuthState(true);
-    $("userName").textContent = me.user.display_name || me.user.username;
-    const avatar = avatarUrlForUser(me.user);
+    $("userName").textContent = state.user.display_name || state.user.username;
+    const avatar = avatarUrlForUser(state.user);
     $("userAvatar").src = avatar;
-    $("userAvatar").alt = `${me.user.display_name || me.user.username} Avatar`;
+    $("userAvatar").alt = `${state.user.display_name || state.user.username} Avatar`;
     $("userAvatar").onerror = () => {
-      $("userAvatar").src = defaultAvatarUrlForUser(me.user);
+      $("userAvatar").src = defaultAvatarUrlForUser(state.user);
     };
     renderGuilds();
     if (window.renderModuleSidebar) renderModuleSidebar();
     if (window.renderQuickModules) renderQuickModules();
-    const rememberedGuild = Number(localStorage.getItem("starry_guild"));
-    if (rememberedGuild && state.guilds.find((guild) => guild.id === rememberedGuild)) {
+    const rememberedGuild = String(localStorage.getItem("starry_guild") || "").trim();
+    if (rememberedGuild && state.guilds.find((guild) => String(guild.id) === rememberedGuild)) {
       await selectGuild(rememberedGuild);
     } else if (state.guilds.length) {
-      await selectGuild(state.guilds[0].id);
+      await selectGuild(String(state.guilds[0].id));
     }
     await loadGlobalSummary();
     renderEmbedPreview();

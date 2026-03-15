@@ -94,12 +94,12 @@ class WebServer:
         @self.app.get("/api/me")
         async def me(request: Request):
             session = await self._require_session(request)
-            return JSONResponse(self._session_payload(session))
+            return JSONResponse(self._json_safe(self._session_payload(session)))
 
         @self.app.get("/api/guilds")
         async def list_guilds(request: Request):
             session = await self._require_session(request)
-            return JSONResponse(self._accessible_guilds(session))
+            return JSONResponse(self._json_safe(self._accessible_guilds(session)))
 
         @self.app.get("/api/global/summary")
         async def global_summary(request: Request):
@@ -139,7 +139,7 @@ class WebServer:
         @self.app.get("/api/guilds/{guild_id}/meta")
         async def get_guild_meta(request: Request, guild_id: int):
             guild = await self._require_guild_access(request, guild_id)
-            return JSONResponse(self._guild_meta_payload(guild))
+            return JSONResponse(self._json_safe(self._guild_meta_payload(guild)))
 
         @self.app.get("/api/guilds/{guild_id}/overrides")
         async def get_guild_overrides(request: Request, guild_id: int):
@@ -209,7 +209,7 @@ class WebServer:
                     "mention": str(member.mention),
                     "avatar_url": avatar_url,
                 })
-            return JSONResponse({
+            return JSONResponse(self._json_safe({
                 "guild": {
                     "id": int(guild.id),
                     "name": str(guild.name),
@@ -218,7 +218,7 @@ class WebServer:
                 "threads": threads,
                 "roles": roles,
                 "members": members,
-            })
+            }))
 
         @self.app.get("/api/guilds/{guild_id}/modules")
         async def list_modules(request: Request, guild_id: int):
@@ -227,12 +227,12 @@ class WebServer:
                 self._serialize_setup_module(int(guild_id), module_key, include_settings=False)
                 for module_key in self.setup_service.module_keys()
             ]
-            return JSONResponse(payload)
+            return JSONResponse(self._json_safe(payload))
 
         @self.app.get("/api/guilds/{guild_id}/setup/modules")
         async def list_modules_legacy(request: Request, guild_id: int):
             await self._require_guild_access(request, guild_id)
-            return JSONResponse(self.setup_service.module_payloads(int(guild_id)))
+            return JSONResponse(self._json_safe(self.setup_service.module_payloads(int(guild_id))))
 
         @self.app.get("/api/guilds/{guild_id}/modules/{module_key}")
         async def get_module(request: Request, guild_id: int, module_key: str):
@@ -240,7 +240,7 @@ class WebServer:
             resolved = self.setup_service.resolve_module_key(module_key)
             if not resolved:
                 raise HTTPException(status_code=404, detail="Module not found")
-            return JSONResponse(self._serialize_setup_module(int(guild_id), resolved, include_settings=True))
+            return JSONResponse(self._json_safe(self._serialize_setup_module(int(guild_id), resolved, include_settings=True)))
 
         @self.app.get("/api/guilds/{guild_id}/setup/modules/{module_key}")
         async def get_module_legacy(request: Request, guild_id: int, module_key: str):
@@ -248,7 +248,7 @@ class WebServer:
             payload = self.setup_service.module_payload(int(guild_id), module_key)
             if not payload:
                 raise HTTPException(status_code=404, detail="Module not found")
-            return JSONResponse(payload)
+            return JSONResponse(self._json_safe(payload))
 
         @self.app.post("/api/guilds/{guild_id}/modules/{module_key}/set")
         async def set_module_setting(request: Request, guild_id: int, module_key: str):
@@ -381,7 +381,7 @@ class WebServer:
                     "closed_at": r[6],
                     "rating": r[7]
                 })
-            return JSONResponse(out)
+            return JSONResponse(self._json_safe(out))
 
         @self.app.get("/api/logs")
         async def list_logs(request: Request, limit: int = 200):
@@ -441,7 +441,7 @@ class WebServer:
                     "created_at": r[4],
                     "closed_at": r[5],
                 })
-            return JSONResponse(out)
+            return JSONResponse(self._json_safe(out))
 
         @self.app.get("/api/global/birthdays")
         async def list_global_birthdays(request: Request, limit: int = 25, offset: int = 0):
@@ -460,19 +460,19 @@ class WebServer:
                     "display_name": user_payload["display_name"],
                     "avatar_url": user_payload["avatar_url"],
                 })
-            return JSONResponse({"total": total, "items": out})
+            return JSONResponse(self._json_safe({"total": total, "items": out}))
 
         @self.app.get("/api/guilds/{guild_id}/birthdays/live")
         async def live_birthdays(request: Request, guild_id: int):
             guild = await self._require_guild_access(request, guild_id)
             payload = await self.birthday_service.build_dashboard_payload(guild)
-            return JSONResponse(payload)
+            return JSONResponse(self._json_safe(payload))
 
         @self.app.get("/api/guilds/{guild_id}/birthdays/summary")
         async def guild_birthdays_summary(request: Request, guild_id: int):
             guild = await self._require_guild_access(request, guild_id)
             payload = await self.birthday_service.build_dashboard_payload(guild)
-            return JSONResponse(payload)
+            return JSONResponse(self._json_safe(payload))
 
         @self.app.websocket("/ws/logs")
         async def ws_logs(websocket: WebSocket):
@@ -506,7 +506,7 @@ class WebServer:
                     out.append({"id": m.id, "name": m.name, "display_name": m.display_name})
                     if len(out) >= 25:
                         break
-            return JSONResponse(out)
+            return JSONResponse(self._json_safe(out))
 
         @self.app.get("/api/guilds/{guild_id}/users/live")
         async def live_users(request: Request, guild_id: int, limit: int = 50):
@@ -522,7 +522,7 @@ class WebServer:
                     })
                 if len(out) >= limit:
                     break
-            return JSONResponse(out)
+            return JSONResponse(self._json_safe(out))
 
         @self.app.post("/api/guilds/{guild_id}/discord/message")
         async def send_message(request: Request, guild_id: int):
@@ -731,6 +731,53 @@ class WebServer:
             return int(value)
         except Exception:
             return 0
+
+    @staticmethod
+    def _snowflake(value) -> str:
+        try:
+            return str(int(value))
+        except Exception:
+            return str(value or "")
+
+    def _json_safe(self, value):
+        if isinstance(value, dict):
+            return {str(key): self._json_safe(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self._json_safe(item) for item in value]
+        if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 9_007_199_254_740_991:
+            return str(value)
+        return value
+
+    @staticmethod
+    def _session_has_dashboard_access(entry: dict | None) -> bool:
+        if not isinstance(entry, dict):
+            return False
+        try:
+            perms = int(entry.get("permissions") or 0)
+        except Exception:
+            perms = 0
+        return bool(entry.get("owner")) or (perms & 0x8) == 0x8
+
+    def _session_guild_entry(self, session: dict, guild_id: int | str) -> dict | None:
+        target = self._snowflake(guild_id)
+        for entry in session.get("guilds", []):
+            if self._snowflake(entry.get("id")) == target:
+                return entry
+        return None
+
+    @staticmethod
+    def _member_has_dashboard_access(guild: discord.Guild | None, user_id: int) -> bool:
+        if guild is None:
+            return False
+        member = guild.get_member(int(user_id))
+        if member is None:
+            return False
+        perms = getattr(member, "guild_permissions", None)
+        return bool(
+            guild.owner_id == member.id
+            or getattr(perms, "administrator", False)
+            or getattr(perms, "manage_guild", False)
+        )
 
     @staticmethod
     def _channel_sort_key(channel: discord.abc.GuildChannel):
@@ -951,8 +998,8 @@ class WebServer:
             "example": self.setup_service.example_value(meta),
             "current_display": self.setup_service.format_value(current_value, meta, limit=400),
             "global_display": self.setup_service.format_value(global_value, meta, limit=400),
-            "current_value": None if sensitive else current_value,
-            "global_value": None if sensitive else global_value,
+            "current_value": None if sensitive else self._json_safe(current_value),
+            "global_value": None if sensitive else self._json_safe(global_value),
         }
 
     def _serialize_setup_module(self, guild_id: int, module_key: str, *, include_settings: bool) -> dict:
@@ -1079,7 +1126,7 @@ class WebServer:
         user_id = int(session["user_id"])
         return {
             "user": {
-                "id": user_id,
+                "id": self._snowflake(user_id),
                 "username": session["username"],
                 "avatar": session.get("avatar") or None,
                 "avatar_url": self._avatar_url_from_hash(user_id, session.get("avatar")),
@@ -1090,20 +1137,36 @@ class WebServer:
 
     def _accessible_guilds(self, session: dict) -> list[dict]:
         out = []
-        for g in session.get("guilds", []):
+        seen: set[int] = set()
+        user_id = int(session["user_id"])
+        candidate_ids: list[int] = []
+
+        for entry in session.get("guilds", []):
             try:
-                gid = int(g.get("id"))
+                candidate_ids.append(int(entry.get("id")))
             except Exception:
                 continue
-            perms = int(g.get("permissions") or 0)
-            is_owner = bool(g.get("owner"))
-            is_admin = (perms & 0x8) == 0x8
-            if not (is_owner or is_admin):
+
+        for guild in self.bot.guilds:
+            if self._member_has_dashboard_access(guild, user_id):
+                candidate_ids.append(int(guild.id))
+
+        for gid in candidate_ids:
+            if gid in seen:
                 continue
+            seen.add(gid)
             bot_guild = self.bot.get_guild(gid)
             if not bot_guild:
                 continue
-            icon_hash = g.get("icon")
+            session_entry = self._session_guild_entry(session, gid)
+            session_allowed = self._session_has_dashboard_access(session_entry)
+            cached_allowed = self._member_has_dashboard_access(bot_guild, user_id)
+            if not (session_allowed or cached_allowed):
+                continue
+
+            perms = 8 if cached_allowed else int((session_entry or {}).get("permissions") or 0)
+            is_owner = bool((session_entry or {}).get("owner")) or bot_guild.owner_id == user_id
+            icon_hash = (session_entry or {}).get("icon")
             icon_url = None
             if icon_hash:
                 icon_url = f"https://cdn.discordapp.com/icons/{gid}/{icon_hash}.webp?size=128"
@@ -1113,8 +1176,8 @@ class WebServer:
                 except Exception:
                     icon_url = None
             out.append({
-                "id": gid,
-                "name": g.get("name") or bot_guild.name,
+                "id": self._snowflake(gid),
+                "name": (session_entry or {}).get("name") or bot_guild.name,
                 "icon": icon_hash,
                 "icon_url": icon_url,
                 "owner": is_owner,
@@ -1125,13 +1188,15 @@ class WebServer:
 
     async def _require_guild_access(self, request: Request, guild_id: int) -> discord.Guild:
         session = await self._require_session(request)
-        allowed = {int(g["id"]) for g in self._accessible_guilds(session)}
         gid = int(guild_id)
-        if gid not in allowed:
-            raise HTTPException(status_code=403, detail="Missing permissions")
         guild = self.bot.get_guild(gid)
         if not guild:
             raise HTTPException(status_code=404, detail="Guild not found")
+        session_entry = self._session_guild_entry(session, gid)
+        session_allowed = self._session_has_dashboard_access(session_entry)
+        cached_allowed = self._member_has_dashboard_access(guild, int(session["user_id"]))
+        if not (session_allowed or cached_allowed):
+            raise HTTPException(status_code=403, detail="Missing permissions")
         return guild
 
     async def _channel(self, channel_id: int):
