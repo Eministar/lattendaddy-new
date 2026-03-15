@@ -96,11 +96,17 @@ window.renderModuleSidebar = function renderModuleSidebar() {
     const button = createElement("button", `module-nav-btn${state.moduleKey === module.key ? " active" : ""}`);
     button.type = "button";
     button.innerHTML = `
-      <span class="module-nav-main">
-        <span class="module-emoji">${escapeHtml(module.emoji || "⚙️")}</span>
-        <span class="module-name">${escapeHtml(module.label)}</span>
+      <span class="module-nav-head">
+        <span class="module-nav-icon">${escapeHtml(module.emoji || "⚙️")}</span>
+        <span class="module-nav-copy">
+          <strong>${escapeHtml(module.label)}</strong>
+          <small>${escapeHtml(module.key)} · ${escapeHtml(module.settings_total || 0)} Settings</small>
+        </span>
       </span>
-      <span class="module-nav-meta"><span class="module-count">${escapeHtml(module.override_total || 0)}</span></span>
+      <span class="module-nav-badges">
+        <span class="module-badge module-badge-warm">${escapeHtml(module.override_total || 0)} Overrides</span>
+        <span class="module-badge">${escapeHtml((module.aliases || []).length || 0)} Aliase</span>
+      </span>
     `;
     button.onclick = () => selectModule(module.key);
     root.appendChild(button);
@@ -123,6 +129,7 @@ window.renderQuickModules = function renderQuickModules() {
     tile.type = "button";
     tile.innerHTML = `
       <div class="module-tile-label">${escapeHtml(`${module.emoji || "⚙️"} ${module.label}`)}</div>
+      <div class="module-tile-sub">${escapeHtml(module.key)}</div>
       <div class="module-tile-sub">${escapeHtml(`${module.override_total || 0} Overrides · ${module.settings_total || 0} Settings`)}</div>
     `;
     tile.onclick = () => selectModule(module.key);
@@ -364,11 +371,16 @@ window.createListChip = function createListChip(setting, value) {
 window.buildSettingCard = function buildSettingCard(setting) {
   const card = createElement("div", "setting-card");
   const sourceClass = setting.has_override ? "setting-source override" : "setting-source";
+  const selectorPill = setting.selector_type ? `<span class="setting-pill">${escapeHtml(setting.selector_type)}</span>` : "";
   card.innerHTML = `
     <div class="setting-head">
       <div class="setting-copy">
         <div class="setting-path">${escapeHtml(setting.label || setting.relative_path)}</div>
-        <div class="setting-type">${escapeHtml(setting.relative_path)} · ${escapeHtml(setting.type_label)}${setting.selector_type ? ` · ${escapeHtml(setting.selector_type)}` : ""}</div>
+        <div class="setting-meta-row">
+          <span class="setting-pill">${escapeHtml(setting.type_label)}</span>
+          ${selectorPill}
+          <span class="setting-pill subtle">${escapeHtml(setting.relative_path)}</span>
+        </div>
       </div>
       <div class="${sourceClass}">${setting.has_override ? "Guild-Override" : "Global"}</div>
     </div>

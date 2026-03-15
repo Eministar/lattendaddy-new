@@ -386,17 +386,17 @@ window.renderApplicationsList = function renderApplicationsList() {
   applicationCache.forEach((row) => {
     const member = resolveResource("members", row.user_id);
     const avatar = member?.avatar_url || defaultAvatarUrlForUser({ id: row.user_id });
-    const div = createElement("div", "list-item");
+    const div = createElement("div", "list-item entity-card");
     div.innerHTML = `
       <div class="entity-row">
         <img class="avatar-chip" src="${escapeHtml(avatar)}" alt="Avatar">
         <div class="entity-copy">
           <div class="entity-title">${escapeHtml(memberLabel(row.user_id))}</div>
           <div class="entity-sub">Bewerbung #${escapeHtml(row.id)} · ${escapeHtml(channelLabel(row.thread_id))}</div>
+          <div class="entity-sub">Erstellt ${escapeHtml(formatDate(row.created_at))}</div>
         </div>
         <span class="status-pill">${escapeHtml(row.status)}</span>
       </div>
-      <div class="list-meta">Erstellt ${escapeHtml(formatDate(row.created_at))}</div>
     `;
     root.appendChild(div);
   });
@@ -658,6 +658,15 @@ window.refreshPicker = function refreshPicker(selectId) {
       </div>
     `;
     select.classList.add("picker-native");
+    select.tabIndex = -1;
+    select.setAttribute("aria-hidden", "true");
+    select.style.position = "absolute";
+    select.style.opacity = "0";
+    select.style.pointerEvents = "none";
+    select.style.width = "1px";
+    select.style.height = "1px";
+    select.style.margin = "0";
+    select.style.padding = "0";
     select.after(picker);
     const trigger = picker.querySelector(".picker-trigger");
     const search = picker.querySelector(".picker-search");
@@ -856,7 +865,7 @@ window.searchUsers = async function searchUsers() {
   list.forEach((row) => {
     const member = resolveResource("members", row.id);
     const avatar = member?.avatar_url || defaultAvatarUrlForUser({ id: row.id });
-    const div = createElement("div", "list-item");
+    const div = createElement("div", "list-item entity-card");
     div.innerHTML = `
       <div class="entity-row">
         <img class="avatar-chip" src="${escapeHtml(avatar)}" alt="Avatar">
@@ -882,7 +891,7 @@ window.loadLiveUsers = async function loadLiveUsers() {
   list.forEach((row) => {
     const member = resolveResource("members", row.id);
     const avatar = member?.avatar_url || defaultAvatarUrlForUser({ id: row.id });
-    const div = createElement("div", "list-item");
+    const div = createElement("div", "list-item entity-card");
     div.innerHTML = `
       <div class="entity-row">
         <div class="avatar-stack">
@@ -891,8 +900,9 @@ window.loadLiveUsers = async function loadLiveUsers() {
         </div>
         <div class="entity-copy">
           <div class="entity-title">${escapeHtml(row.display_name)}</div>
-          <div class="entity-sub">${escapeHtml(String(row.status || "offline"))}</div>
+          <div class="entity-sub">@${escapeHtml(row.name || row.display_name)}</div>
         </div>
+        <span class="status-pill subtle">${escapeHtml(String(row.status || "offline"))}</span>
       </div>
     `;
     root.appendChild(div);
@@ -908,7 +918,7 @@ window.loadBirthdays = async function loadBirthdays() {
     return;
   }
   data.items.forEach((row) => {
-    const div = createElement("div", "list-item");
+    const div = createElement("div", "list-item entity-card");
     const label = row.display_name || row.username || memberLabel(row.user_id);
     div.innerHTML = `
       <div class="entity-row">

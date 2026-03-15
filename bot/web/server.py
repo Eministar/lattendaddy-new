@@ -38,7 +38,14 @@ class WebServer:
 
         @self.app.get("/")
         async def index():
-            return FileResponse(os.path.join(static_dir, "index.html"))
+            return FileResponse(
+                os.path.join(static_dir, "index.html"),
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
 
         @self.app.get("/login")
         async def login():

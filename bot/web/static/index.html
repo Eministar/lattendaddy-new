@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@300;400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=20260315-ux3">
 </head>
 <body>
   <div class="bg-grid"></div>
@@ -215,7 +215,7 @@
               <select id="kickUserId"></select>
               <select id="kickModeratorId"></select>
               <input id="kickReason" type="text" placeholder="Grund (optional)">
-              <button id="kickBtn">Kick</button>
+              <button id="kickBtn" class="ghost">Kick</button>
               <select id="banUserId"></select>
               <select id="banModeratorId"></select>
               <input id="banDays" type="number" placeholder="Delete Days (0-7)">
@@ -252,7 +252,7 @@
             <div class="form-grid">
               <select id="roleRemoveUserId"></select>
               <select id="roleRemoveRoleId"></select>
-              <button id="roleRemoveBtn">Entfernen</button>
+              <button id="roleRemoveBtn" class="ghost">Entfernen</button>
             </div>
           </div>
         </div>
@@ -397,8 +397,8 @@
     </main>
   </div>
 
-  <script src="/static/app-core.js"></script>
-  <script src="/static/app-modules.js"></script>
-  <script src="/static/app-actions.js"></script>
+  <script src="/static/app-core.js?v=20260315-ux3"></script>
+  <script src="/static/app-modules.js?v=20260315-ux3"></script>
+  <script src="/static/app-actions.js?v=20260315-ux3"></script>
 </body>
 </html>
