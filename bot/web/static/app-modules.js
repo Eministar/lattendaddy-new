@@ -158,6 +158,11 @@ window.settingGroupLabel = function settingGroupLabel(setting) {
     .join(" / ");
 };
 
+window.moduleControlId = function moduleControlId(setting, token = "field") {
+  const raw = `${state.moduleKey || "module"}-${setting.relative_path || setting.leaf_name || token}-${token}`;
+  return `module-${raw.replace(/[^a-zA-Z0-9_-]+/g, "-")}`;
+};
+
 window.isMessagePointerSetting = function isMessagePointerSetting(setting) {
   const leaf = String(setting.leaf_name || "").toLowerCase();
   return leaf.endsWith("_message_id") || leaf === "message_id";
@@ -229,6 +234,8 @@ window.settingNeedsTextarea = function settingNeedsTextarea(setting) {
 
 window.buildSelectForSetting = function buildSelectForSetting(setting, currentValue) {
   const select = createElement("select");
+  select.id = moduleControlId(setting, "select");
+  select.dataset.kind = String(setting.selector_type || setting.reference_kind || "");
   const empty = document.createElement("option");
   empty.value = "";
   empty.textContent = setting.example ? `Leer / ${setting.example}` : "Wert wählen";
@@ -504,6 +511,7 @@ window.renderModuleEditor = function renderModuleEditor() {
     section.appendChild(grid);
     settingsRoot.appendChild(section);
   }
+  if (window.enhanceSelects) enhanceSelects(settingsRoot);
 };
 
 window.loadModules = async function loadModules() {

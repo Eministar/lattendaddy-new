@@ -384,15 +384,91 @@ window.renderApplicationsList = function renderApplicationsList() {
     return;
   }
   applicationCache.forEach((row) => {
+    const member = resolveResource("members", row.user_id);
+    const avatar = member?.avatar_url || defaultAvatarUrlForUser({ id: row.user_id });
     const div = createElement("div", "list-item");
     div.innerHTML = `
-      <strong>#${escapeHtml(row.id)}</strong>
-      <div>${escapeHtml(memberLabel(row.user_id))}</div>
-      <div class="list-meta">${escapeHtml(channelLabel(row.thread_id))}</div>
-      <div class="list-meta">${escapeHtml(row.status)} · ${escapeHtml(formatDate(row.created_at))}</div>
+      <div class="entity-row">
+        <img class="avatar-chip" src="${escapeHtml(avatar)}" alt="Avatar">
+        <div class="entity-copy">
+          <div class="entity-title">${escapeHtml(memberLabel(row.user_id))}</div>
+          <div class="entity-sub">Bewerbung #${escapeHtml(row.id)} · ${escapeHtml(channelLabel(row.thread_id))}</div>
+        </div>
+        <span class="status-pill">${escapeHtml(row.status)}</span>
+      </div>
+      <div class="list-meta">Erstellt ${escapeHtml(formatDate(row.created_at))}</div>
     `;
     root.appendChild(div);
   });
+};
+
+window.parsePayloadObject = function parsePayloadObject(payload) {
+  if (payload && typeof payload === "object") return payload;
+  if (typeof payload === "string") {
+    try {
+      return JSON.parse(payload);
+    } catch (_err) {
+      return { text: payload };
+    }
+  }
+  return {};
+};
+
+window.looksLikeEmbedObject = function looksLikeEmbedObject(value) {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && (
+      value.title
+      || value.description
+      || value.fields
+      || value.thumbnail
+      || value.image
+      || value.footer
+      || value.author
+    )
+  );
+};
+
+window.collectEmbedObjects = function collectEmbedObjects(value, out = [], depth = 0) {
+  if (!value || depth > 3) return out;
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectEmbedObjects(item, out, depth + 1));
+    return out;
+  }
+  if (looksLikeEmbedObject(value)) out.push(value);
+  if (typeof value === "object") {
+    Object.entries(value).forEach(([key, item]) => {
+      if (["embed", "embeds", "message", "messages", "data", "payload"].includes(String(key))) {
+        collectEmbedObjects(item, out, depth + 1);
+      }
+    });
+  }
+  return out;
+};
+
+window.renderEmbedCardHtml = function renderEmbedCardHtml(embed) {
+  const fields = Array.isArray(embed.fields) ? embed.fields : [];
+  const author = embed.author?.name || "";
+  const footer = typeof embed.footer === "object" ? embed.footer.text : embed.footer;
+  const thumb = typeof embed.thumbnail === "object" ? embed.thumbnail.url : embed.thumbnail;
+  const image = typeof embed.image === "object" ? embed.image.url : embed.image;
+  return `
+    <div class="log-embed">
+      <div class="embed-shell">
+        ${thumb ? `<img class="embed-thumb" src="${escapeHtml(thumb)}" alt="Thumbnail">` : ""}
+        <div class="embed-body">
+          ${author ? `<div class="embed-author">${escapeHtml(author)}</div>` : ""}
+          ${embed.title ? `<div class="embed-title">${escapeHtml(embed.title)}</div>` : ""}
+          ${embed.description ? `<div class="embed-desc">${escapeHtml(embed.description)}</div>` : ""}
+          ${fields.length ? `<div class="embed-fields">${fields.map((field) => `<div class="embed-field"><strong>${escapeHtml(field.name || "")}</strong><div>${escapeHtml(field.value || "")}</div></div>`).join("")}</div>` : ""}
+          ${image ? `<img class="embed-image" src="${escapeHtml(image)}" alt="Embed Bild">` : ""}
+          ${footer ? `<div class="embed-footer">${escapeHtml(footer)}</div>` : ""}
+        </div>
+      </div>
+    </div>
+  `;
 };
 
 window.renderLogs = function renderLogs(list, prepend = false) {
@@ -403,11 +479,23 @@ window.renderLogs = function renderLogs(list, prepend = false) {
     return;
   }
   list.forEach((row) => {
-    const div = createElement("div", "list-item");
+    const payload = parsePayloadObject(row.payload);
+    const embeds = collectEmbedObjects(payload);
+    const factEntries = Object.entries(payload || {})
+      .filter(([key, value]) => !["embed", "embeds", "message", "messages", "data", "payload"].includes(String(key)) && (typeof value !== "object" || value === null))
+      .slice(0, 6);
+    const div = createElement("div", "list-item log-card");
     div.innerHTML = `
-      <strong>${escapeHtml(row.event)}</strong>
-      <div class="list-meta">${escapeHtml(formatDate(row.created_at))}</div>
-      <pre class="json-block">${escapeHtml(prettyJson(row.payload))}</pre>
+      <div class="log-head">
+        <strong class="log-title">${escapeHtml(row.event)}</strong>
+        <span class="status-pill subtle">${escapeHtml(formatDate(row.created_at))}</span>
+      </div>
+      ${factEntries.length ? `<div class="log-facts">${factEntries.map(([key, value]) => `<div class="log-fact"><span>${escapeHtml(key)}</span><strong>${escapeHtml(String(value))}</strong></div>`).join("")}</div>` : ""}
+      ${embeds.length ? `<div class="log-embed-stack">${embeds.slice(0, 3).map((embed) => renderEmbedCardHtml(embed)).join("")}</div>` : ""}
+      <details class="log-json">
+        <summary>Rohdaten</summary>
+        <pre class="json-block pretty-json">${escapeHtml(prettyJson(payload))}</pre>
+      </details>
     `;
     if (prepend) root.prepend(div); else root.appendChild(div);
   });
@@ -439,6 +527,7 @@ window.optionLabel = function optionLabel(item) {
 window.fillSelect = function fillSelect(selectId, items, placeholder, currentValue = "") {
   const select = $(selectId);
   if (!select) return;
+  select.dataset.kind = "";
   select.innerHTML = "";
   const empty = document.createElement("option");
   empty.value = "";
@@ -456,6 +545,7 @@ window.fillSelect = function fillSelect(selectId, items, placeholder, currentVal
 window.fillTypedSelect = function fillTypedSelect(selectId, items, placeholder, kind, currentValue = "") {
   const select = $(selectId);
   if (!select) return;
+  select.dataset.kind = String(kind || "");
   select.innerHTML = "";
   const empty = document.createElement("option");
   empty.value = "";
@@ -470,10 +560,162 @@ window.fillTypedSelect = function fillTypedSelect(selectId, items, placeholder, 
   });
 };
 
+window.resourceLookupByKind = function resourceLookupByKind(kind, id) {
+  if (!state.resources || !id) return null;
+  const value = String(id);
+  if (kind === "user") return (state.resources.members || []).find((item) => String(item.id) === value) || null;
+  if (kind === "role") return (state.resources.roles || []).find((item) => String(item.id) === value) || null;
+  if (kind === "thread") return (state.resources.threads || []).find((item) => String(item.id) === value) || null;
+  if (kind === "channel") {
+    return [...(state.resources.channels || []), ...(state.resources.threads || [])].find((item) => String(item.id) === value) || null;
+  }
+  return null;
+};
+
+window.pickerOptionMarkup = function pickerOptionMarkup(select, option, selected = false) {
+  const value = String(option.value || "");
+  const label = option.textContent || option.label || "";
+  const kind = String(select.dataset.kind || "");
+  const item = resourceLookupByKind(kind, value);
+  const checked = selected ? '<span class="picker-check">✓</span>' : '<span class="picker-check empty"></span>';
+  if (!value) {
+    return `<span class="picker-option-copy"><strong>${escapeHtml(label)}</strong></span>${checked}`;
+  }
+  if (kind === "user") {
+    const avatar = item?.avatar_url || defaultAvatarUrlForUser({ id: value });
+    const handle = item?.name ? `@${item.name}` : "";
+    return `
+      <span class="picker-option-main">
+        <img class="picker-avatar" src="${escapeHtml(avatar)}" alt="Avatar">
+        <span class="picker-option-copy">
+          <strong>${escapeHtml(item?.display_name || label)}</strong>
+          <small>${escapeHtml(handle || label)}</small>
+        </span>
+      </span>
+      ${checked}
+    `;
+  }
+  if (kind === "role") {
+    const swatch = item?.color && item.color !== "#000000"
+      ? `<span class="picker-swatch" style="background:${escapeHtml(item.color)}"></span>`
+      : '<span class="picker-swatch neutral"></span>';
+    return `
+      <span class="picker-option-main">
+        ${swatch}
+        <span class="picker-option-copy">
+          <strong>${escapeHtml(item?.name || label)}</strong>
+          <small>Rolle</small>
+        </span>
+      </span>
+      ${checked}
+    `;
+  }
+  if (kind === "channel" || kind === "thread") {
+    const icon = kind === "thread" ? "🧵" : "#";
+    return `
+      <span class="picker-option-main">
+        <span class="picker-channel-icon">${icon}</span>
+        <span class="picker-option-copy">
+          <strong>${escapeHtml(item ? resourceOptionLabel(item, kind) : label)}</strong>
+          <small>${escapeHtml(kind === "thread" ? "Thread" : "Kanal")}</small>
+        </span>
+      </span>
+      ${checked}
+    `;
+  }
+  return `
+    <span class="picker-option-copy">
+      <strong>${escapeHtml(label)}</strong>
+    </span>
+    ${checked}
+  `;
+};
+
+window.closePickers = function closePickers(exceptId = "") {
+  document.querySelectorAll(".picker.open").forEach((picker) => {
+    if (exceptId && picker.dataset.selectId === exceptId) return;
+    picker.classList.remove("open");
+  });
+};
+
+window.refreshPicker = function refreshPicker(selectId) {
+  const select = typeof selectId === "string" ? $(selectId) : selectId;
+  if (!select || select.tagName !== "SELECT") return;
+  if (!select.id) return;
+
+  let picker = select.nextElementSibling;
+  if (!picker || !picker.classList.contains("picker")) {
+    picker = document.createElement("div");
+    picker.className = "picker";
+    picker.dataset.selectId = select.id;
+    picker.innerHTML = `
+      <button type="button" class="picker-trigger"></button>
+      <div class="picker-menu">
+        <div class="picker-search-wrap">
+          <input type="text" class="picker-search" placeholder="Suchen…">
+        </div>
+        <div class="picker-options"></div>
+      </div>
+    `;
+    select.classList.add("picker-native");
+    select.after(picker);
+    const trigger = picker.querySelector(".picker-trigger");
+    const search = picker.querySelector(".picker-search");
+    trigger.addEventListener("click", (event) => {
+      event.preventDefault();
+      const shouldOpen = !picker.classList.contains("open");
+      closePickers(shouldOpen ? select.id : "");
+      picker.classList.toggle("open", shouldOpen);
+      if (shouldOpen) {
+        search.value = "";
+        refreshPicker(select);
+        search.focus();
+      }
+    });
+    search.addEventListener("input", () => refreshPicker(select));
+    select.addEventListener("change", () => refreshPicker(select));
+  }
+
+  const trigger = picker.querySelector(".picker-trigger");
+  const optionsRoot = picker.querySelector(".picker-options");
+  const search = picker.querySelector(".picker-search");
+  const query = String(search.value || "").trim().toLowerCase();
+  const selectedOption = select.options[select.selectedIndex] || select.options[0];
+  trigger.innerHTML = `
+    <span class="picker-trigger-copy">${pickerOptionMarkup(select, selectedOption || { value: "", textContent: "Wählen" })}</span>
+    <span class="picker-caret">▾</span>
+  `;
+
+  optionsRoot.innerHTML = "";
+  Array.from(select.options).forEach((option) => {
+    const label = String(option.textContent || option.label || "").toLowerCase();
+    if (query && !label.includes(query)) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `picker-option${option.selected ? " active" : ""}`;
+    button.innerHTML = pickerOptionMarkup(select, option, option.selected);
+    button.addEventListener("click", () => {
+      select.value = option.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      select.dispatchEvent(new Event("input", { bubbles: true }));
+      picker.classList.remove("open");
+    });
+    optionsRoot.appendChild(button);
+  });
+
+  if (!optionsRoot.childNodes.length) {
+    optionsRoot.innerHTML = '<div class="picker-empty">Keine Treffer</div>';
+  }
+};
+
+window.enhanceSelects = function enhanceSelects(root = document) {
+  root.querySelectorAll("select").forEach((select) => refreshPicker(select));
+};
+
 window.populateMessagingSelectors = function populateMessagingSelectors() {
   const items = channelCandidates(true);
-  fillSelect("msgChannelSelect", items, "Channel wählen");
-  fillSelect("embedChannelSelect", items, "Channel wählen");
+  fillTypedSelect("msgChannelSelect", items, "Channel wählen", "channel");
+  fillTypedSelect("embedChannelSelect", items, "Channel wählen", "channel");
 };
 
 window.currentEmbedPayload = function currentEmbedPayload() {
@@ -553,6 +795,7 @@ window.loadResources = async function loadResources() {
   state.resources = await api(`/api/guilds/${gid}/resources`);
   populateMessagingSelectors();
   populateOperationalSelectors();
+  enhanceSelects();
   renderTickets();
   renderTicketDetail();
   renderApplicationsList();
@@ -568,6 +811,7 @@ window.loadTickets = async function loadTickets() {
   renderTickets();
   renderTicketDetail();
   populateOperationalSelectors();
+  enhanceSelects();
 };
 
 window.loadApplicationsList = async function loadApplicationsList() {
@@ -611,13 +855,16 @@ window.searchUsers = async function searchUsers() {
   }
   list.forEach((row) => {
     const member = resolveResource("members", row.id);
+    const avatar = member?.avatar_url || defaultAvatarUrlForUser({ id: row.id });
     const div = createElement("div", "list-item");
     div.innerHTML = `
-      <div class="inline-identity">
-        ${member && member.avatar_url ? `<img class="avatar-chip" src="${escapeHtml(member.avatar_url)}" alt="Avatar">` : ""}
-        <strong>${escapeHtml(row.display_name)}</strong>
+      <div class="entity-row">
+        <img class="avatar-chip" src="${escapeHtml(avatar)}" alt="Avatar">
+        <div class="entity-copy">
+          <div class="entity-title">${escapeHtml(row.display_name)}</div>
+          <div class="entity-sub">@${escapeHtml(row.name || row.display_name)}</div>
+        </div>
       </div>
-      <div class="list-meta">@${escapeHtml(row.name || row.display_name)}</div>
     `;
     root.appendChild(div);
   });
@@ -634,13 +881,19 @@ window.loadLiveUsers = async function loadLiveUsers() {
   }
   list.forEach((row) => {
     const member = resolveResource("members", row.id);
+    const avatar = member?.avatar_url || defaultAvatarUrlForUser({ id: row.id });
     const div = createElement("div", "list-item");
     div.innerHTML = `
-      <div class="inline-identity">
-        ${member && member.avatar_url ? `<img class="avatar-chip" src="${escapeHtml(member.avatar_url)}" alt="Avatar">` : ""}
-        <strong>${escapeHtml(row.display_name)}</strong>
+      <div class="entity-row">
+        <div class="avatar-stack">
+          <img class="avatar-chip" src="${escapeHtml(avatar)}" alt="Avatar">
+          <span class="presence-dot ${escapeHtml(String(row.status || "offline"))}"></span>
+        </div>
+        <div class="entity-copy">
+          <div class="entity-title">${escapeHtml(row.display_name)}</div>
+          <div class="entity-sub">${escapeHtml(String(row.status || "offline"))}</div>
+        </div>
       </div>
-      <div class="list-meta">${escapeHtml(row.status)}</div>
     `;
     root.appendChild(div);
   });
@@ -658,11 +911,13 @@ window.loadBirthdays = async function loadBirthdays() {
     const div = createElement("div", "list-item");
     const label = row.display_name || row.username || memberLabel(row.user_id);
     div.innerHTML = `
-      <div class="inline-identity">
+      <div class="entity-row">
         <img class="avatar-chip" src="${escapeHtml(row.avatar_url || defaultAvatarUrlForUser({ id: row.user_id }))}" alt="Avatar">
-        <strong>${escapeHtml(label)}</strong>
+        <div class="entity-copy">
+          <div class="entity-title">${escapeHtml(label)}</div>
+          <div class="entity-sub">${escapeHtml(`${row.day}.${row.month}.${row.year}`)}</div>
+        </div>
       </div>
-      <div class="list-meta">${escapeHtml(`${row.day}.${row.month}.${row.year}`)}</div>
     `;
     root.appendChild(div);
   });
@@ -730,6 +985,13 @@ window.selectGuild = async function selectGuild(guildId) {
 
 window.initDashboard = async function initDashboard() {
   try {
+    if (!window.__starryPickerBound) {
+      document.addEventListener("click", (event) => {
+        if (event.target.closest(".picker")) return;
+        closePickers();
+      });
+      window.__starryPickerBound = true;
+    }
     const me = await api("/api/me");
     state.user = me.user ? { ...me.user, id: String(me.user.id || "") } : null;
     state.guilds = (me.guilds || []).map((guild) => ({ ...guild, id: String(guild.id || "") }));
@@ -744,6 +1006,7 @@ window.initDashboard = async function initDashboard() {
     renderGuilds();
     if (window.renderModuleSidebar) renderModuleSidebar();
     if (window.renderQuickModules) renderQuickModules();
+    enhanceSelects();
     const rememberedGuild = String(localStorage.getItem("starry_guild") || "").trim();
     if (rememberedGuild && state.guilds.find((guild) => String(guild.id) === rememberedGuild)) {
       await selectGuild(rememberedGuild);
