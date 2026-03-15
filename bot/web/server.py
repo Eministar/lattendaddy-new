@@ -376,12 +376,20 @@ class WebServer:
         async def list_tickets(request: Request, guild_id: int, limit: int = 200):
             await self._require_guild_access(request, guild_id)
             rows = await self.db.list_tickets_for_guild(int(guild_id), limit=limit)
+            guild = self.bot.get_guild(int(guild_id)) if self.bot else None
             out = []
             for r in rows:
+                thread_id = r[2]
+                thread_name = None
+                if guild and thread_id:
+                    channel = guild.get_thread(int(thread_id)) or guild.get_channel(int(thread_id))
+                    if channel:
+                        thread_name = getattr(channel, "name", None)
                 out.append({
                     "id": r[0],
                     "user_id": r[1],
-                    "thread_id": r[2],
+                    "thread_id": thread_id,
+                    "thread_name": thread_name,
                     "status": r[3],
                     "claimed_by": r[4],
                     "created_at": r[5],
@@ -993,6 +1001,8 @@ class WebServer:
         sensitive = bool(meta.sensitive)
         return {
             "module_key": meta.module_key,
+            "label": self.setup_service._setting_label(meta),
+            "description": self.setup_service.setting_description(meta),
             "relative_path": meta.relative_path,
             "full_path": meta.full_path,
             "leaf_name": meta.leaf_name,

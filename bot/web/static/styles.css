@@ -190,7 +190,7 @@ body {
 
 .module-nav-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
 }
@@ -226,29 +226,19 @@ body {
   text-overflow: ellipsis;
 }
 
-.module-nav-badges {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.module-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 28px;
-  padding: 5px 10px;
+.module-nav-count {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  display: grid;
+  place-items: center;
   border-radius: 999px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.04);
-  color: var(--muted);
-  font-size: 11px;
-  letter-spacing: 0.03em;
-}
-
-.module-badge-warm {
   background: rgba(248, 214, 111, 0.12);
   border-color: rgba(248, 214, 111, 0.16);
   color: var(--accent);
+  border: 1px solid rgba(248, 214, 111, 0.18);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .sidebar-search {
@@ -438,6 +428,11 @@ select:focus-visible {
   display: flex; justify-content: space-between; gap: 12px; align-items: flex-start;
 }
 .setting-path { font-weight: 700; font-size: 15px; }
+.setting-description {
+  color: #d0d0dc;
+  font-size: 13px;
+  line-height: 1.45;
+}
 .setting-meta-row {
   display: flex;
   flex-wrap: wrap;
@@ -458,9 +453,27 @@ select:focus-visible {
 .setting-pill.subtle {
   color: var(--muted);
 }
+.setting-config-key {
+  color: var(--muted);
+  font-size: 12px;
+}
+.setting-config-key code {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  margin-left: 6px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: rgba(12, 12, 19, 0.82);
+  border: 1px solid rgba(255,255,255,0.05);
+  color: #d7d7e4;
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+}
 .setting-source {
   padding: 6px 10px; border-radius: 999px; background: #26263a; font-size: 11px; white-space: nowrap;
   border: 1px solid rgba(255,255,255,0.05);
+  flex: 0 0 auto;
 }
 .setting-source.override { background: rgba(248, 214, 111, 0.18); color: var(--accent); }
 .setting-values {
@@ -927,12 +940,10 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .picker-menu {
-  position: absolute;
-  top: calc(100% + 10px);
-  left: 0;
-  right: 0;
-  z-index: 40;
+  position: static;
+  z-index: auto;
   display: none;
+  margin-top: 10px;
   padding: 10px;
   border-radius: 18px;
   background: rgba(15, 15, 24, 0.98);

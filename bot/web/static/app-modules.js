@@ -11,6 +11,7 @@ window.normalizeModuleSetting = function normalizeModuleSetting(setting) {
   return {
     ...setting,
     label: setting.label || setting.leaf_name || setting.relative_path || "Setting",
+    description: setting.description || "",
     selector_type: setting.selector_type || setting.reference_kind || null,
     has_override: Boolean(setting.has_override ?? setting.override),
     current_display: setting.current_display ?? text(setting.current_value, "–"),
@@ -100,12 +101,9 @@ window.renderModuleSidebar = function renderModuleSidebar() {
         <span class="module-nav-icon">${escapeHtml(module.emoji || "⚙️")}</span>
         <span class="module-nav-copy">
           <strong>${escapeHtml(module.label)}</strong>
-          <small>${escapeHtml(module.key)} · ${escapeHtml(module.settings_total || 0)} Settings</small>
+          <small>${escapeHtml(module.key)} · ${escapeHtml(module.settings_total || 0)} Settings · ${escapeHtml((module.aliases || []).length || 0)} Aliase</small>
         </span>
-      </span>
-      <span class="module-nav-badges">
-        <span class="module-badge module-badge-warm">${escapeHtml(module.override_total || 0)} Overrides</span>
-        <span class="module-badge">${escapeHtml((module.aliases || []).length || 0)} Aliase</span>
+        <span class="module-nav-count">${escapeHtml(module.override_total || 0)}</span>
       </span>
     `;
     button.onclick = () => selectModule(module.key);
@@ -156,13 +154,34 @@ window.selectorItems = function selectorItems(setting) {
   return [];
 };
 
+window.humanizeSettingToken = function humanizeSettingToken(value) {
+  const text = String(value || "").replace(/[_\-.]+/g, " ").trim();
+  if (!text) return "Allgemein";
+  return text.replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
 window.settingGroupLabel = function settingGroupLabel(setting) {
   const raw = String(setting.parent_path || "allgemein").trim();
   if (!raw) return "Allgemein";
   return raw
     .split(".")
-    .map((part) => part ? part[0].toUpperCase() + part.slice(1) : part)
+    .map((part) => humanizeSettingToken(part))
     .join(" / ");
+};
+
+window.selectorTypeLabel = function selectorTypeLabel(value) {
+  const key = String(value || "").toLowerCase();
+  if (key === "channel") return "Kanal";
+  if (key === "thread") return "Thread";
+  if (key === "role") return "Rolle";
+  if (key === "user") return "Nutzer";
+  return humanizeSettingToken(value);
+};
+
+window.isUnsetReferenceValue = function isUnsetReferenceValue(setting, value) {
+  if (!(setting.selector_type || setting.reference_kind)) return false;
+  const raw = String(value ?? "").trim();
+  return raw === "" || raw === "0" || raw === "null" || raw === "None";
 };
 
 window.moduleControlId = function moduleControlId(setting, token = "field") {
@@ -182,7 +201,7 @@ window.resolveSelectorItem = function resolveSelectorItem(setting, value) {
 };
 
 window.formatSettingValue = function formatSettingValue(setting, value) {
-  if (value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length)) {
+  if (value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length) || isUnsetReferenceValue(setting, value)) {
     return "Nicht gesetzt";
   }
   if (isMessagePointerSetting(setting)) {
@@ -248,7 +267,7 @@ window.buildSelectForSetting = function buildSelectForSetting(setting, currentVa
   empty.textContent = setting.example ? `Leer / ${setting.example}` : "Wert wählen";
   select.appendChild(empty);
   const items = selectorItems(setting);
-  const current = currentValue === undefined || currentValue === null ? "" : String(currentValue);
+  const current = isUnsetReferenceValue(setting, currentValue) ? "" : (currentValue === undefined || currentValue === null ? "" : String(currentValue));
   let found = false;
   items.forEach((item) => {
     const option = document.createElement("option");
@@ -263,11 +282,19 @@ window.buildSelectForSetting = function buildSelectForSetting(setting, currentVa
   if (current && !found) {
     const fallback = document.createElement("option");
     fallback.value = current;
-    fallback.textContent = `Aktueller Wert · ${current}`;
+    fallback.textContent = `${selectorTypeLabel(setting.selector_type || setting.reference_kind)} nicht gefunden`;
     fallback.selected = true;
     select.appendChild(fallback);
   }
   return select;
+};
+
+window.shouldShowExample = function shouldShowExample(setting) {
+  if (!setting || !setting.example) return false;
+  if (setting.selector_type) return false;
+  const example = String(setting.example).trim();
+  if (!example || ["123", "123456789012345678", "true", "eins,zwei,drei"].includes(example)) return false;
+  return true;
 };
 
 window.buildValueControl = function buildValueControl(setting) {
@@ -288,7 +315,7 @@ window.buildValueControl = function buildValueControl(setting) {
     return { node: wrapper, getValue: () => input.checked, control: input };
   }
   if (setting.selector_type && setting.kind !== "list") {
-    const select = buildSelectForSetting(setting, currentValue);
+    const select = buildSelectForSetting(setting, isUnsetReferenceValue(setting, currentValue) ? "" : currentValue);
     return { node: select, getValue: () => select.value.trim() };
   }
   if (setting.kind === "dict" || (setting.kind === "list" && ["dict", "list"].includes(setting.element_kind))) {
@@ -371,16 +398,17 @@ window.createListChip = function createListChip(setting, value) {
 window.buildSettingCard = function buildSettingCard(setting) {
   const card = createElement("div", "setting-card");
   const sourceClass = setting.has_override ? "setting-source override" : "setting-source";
-  const selectorPill = setting.selector_type ? `<span class="setting-pill">${escapeHtml(setting.selector_type)}</span>` : "";
+  const selectorPill = setting.selector_type ? `<span class="setting-pill">${escapeHtml(selectorTypeLabel(setting.selector_type))}</span>` : "";
   card.innerHTML = `
     <div class="setting-head">
       <div class="setting-copy">
         <div class="setting-path">${escapeHtml(setting.label || setting.relative_path)}</div>
+        ${setting.description ? `<div class="setting-description">${escapeHtml(setting.description)}</div>` : ""}
         <div class="setting-meta-row">
           <span class="setting-pill">${escapeHtml(setting.type_label)}</span>
           ${selectorPill}
-          <span class="setting-pill subtle">${escapeHtml(setting.relative_path)}</span>
         </div>
+        <div class="setting-config-key">Konfig-Schlüssel: <code>${escapeHtml(setting.relative_path)}</code></div>
       </div>
       <div class="${sourceClass}">${setting.has_override ? "Guild-Override" : "Global"}</div>
     </div>
@@ -439,7 +467,7 @@ window.buildSettingCard = function buildSettingCard(setting) {
   } else {
     const control = buildValueControl(setting);
     editor.appendChild(control.node);
-    if (setting.example) editor.appendChild(createElement("div", "setting-hint", `Beispiel: ${setting.example}`));
+    if (shouldShowExample(setting)) editor.appendChild(createElement("div", "setting-hint", `Beispiel: ${setting.example}`));
     const actions = createElement("div", "setting-actions");
     const saveBtn = createElement("button", "primary", setting.kind === "bool" ? "Übernehmen" : "Speichern");
     saveBtn.type = "button";

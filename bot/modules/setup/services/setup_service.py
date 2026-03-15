@@ -63,6 +63,32 @@ MODULE_META: dict[str, dict[str, Any]] = {
     "wzs": {"label": "Wort zum Sonntag", "emoji": "📖", "aliases": ("wort", "wortzumsonntag", "wort_zum_sonntag", "sonntag", "wordzoomsonntag")},
 }
 
+SETTING_LABEL_OVERRIDES: dict[str, str] = {
+    "ticket.allow_multiple_open_tickets_per_user": "Mehrere offene Tickets pro Nutzer",
+    "ticket.auto_close_hours": "Auto-Schließen nach Stunden",
+    "ticket.default_category": "Standardkategorie",
+    "ticket.escalation_role_id": "Eskalationsrolle",
+    "ticket.log_channel_id": "Log-Kanal",
+    "ticket.mirror_staff_attachments": "Staff-Anhänge spiegeln",
+    "ticket.notify_user_on_updates": "Nutzer über Updates informieren",
+    "ticket.rating_enabled": "Bewertungen aktivieren",
+    "ticket.sla_first_response_minutes": "SLA für erste Antwort in Minuten",
+    "ticket.status_labels": "Status-Bezeichnungen",
+}
+
+SETTING_DESCRIPTION_OVERRIDES: dict[str, str] = {
+    "ticket.allow_multiple_open_tickets_per_user": "Erlaubt einem Nutzer, mehrere offene Tickets gleichzeitig zu besitzen.",
+    "ticket.auto_close_hours": "Schließt Tickets nach der angegebenen Anzahl Stunden automatisch, wenn keine weitere Aktivität erfolgt.",
+    "ticket.default_category": "Legt fest, welche Ticket-Kategorie standardmäßig vorausgewählt oder ohne Auswahl verwendet wird.",
+    "ticket.escalation_role_id": "Bestimmt die Rolle, die bei Eskalationen erwähnt oder für Eskalationsabläufe verwendet wird.",
+    "ticket.log_channel_id": "Legt fest, in welchem Kanal Ticket-Logs, Statusänderungen oder interne Protokolle landen.",
+    "ticket.mirror_staff_attachments": "Übernimmt Anhänge aus Staff-Nachrichten auch in gespiegelte oder geloggte Ticket-Nachrichten.",
+    "ticket.notify_user_on_updates": "Informiert den Ticket-Ersteller bei sichtbaren Ticket-Updates automatisch mit.",
+    "ticket.rating_enabled": "Aktiviert die Bewertungsabfrage nach dem Schließen eines Tickets.",
+    "ticket.sla_first_response_minutes": "Definiert das Zeitfenster in Minuten bis zur ersten Team-Antwort, bevor ein SLA als kritisch gilt.",
+    "ticket.status_labels": "Definiert eigene sichtbare Namen für Ticket-Status wie offen, geclaimed oder geschlossen.",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class SettingMeta:
@@ -108,6 +134,13 @@ class SetupService:
         if not parts:
             return str(value or "")
         return " ".join(part[:1].upper() + part[1:] for part in parts)
+
+    @staticmethod
+    def _lower_first(value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return text
+        return text[:1].lower() + text[1:]
 
     def _module_info(self, module_key: str) -> dict[str, Any]:
         info = MODULE_META.get(str(module_key), {})
@@ -439,7 +472,80 @@ class SetupService:
         return str(relative_path).rsplit(".", 1)[0]
 
     def _setting_label(self, meta: SettingMeta) -> str:
+        full = meta.full_path.casefold()
+        leaf = meta.leaf_name.casefold()
+        if full in SETTING_LABEL_OVERRIDES:
+            return SETTING_LABEL_OVERRIDES[full]
+        if leaf == "enabled":
+            return "Modul aktivieren"
+        if leaf.endswith("_enabled"):
+            return f"{self._humanize_key(leaf[:-8])} aktivieren"
+        if leaf.endswith("_channel_id"):
+            return f"{self._humanize_key(leaf[:-11])} Kanal"
+        if leaf.endswith("_thread_id"):
+            return f"{self._humanize_key(leaf[:-10])} Thread"
+        if leaf.endswith("_role_id"):
+            return f"{self._humanize_key(leaf[:-8])} Rolle"
+        if leaf.endswith("_user_id"):
+            return f"{self._humanize_key(leaf[:-8])} Nutzer"
+        if leaf.endswith("_hours"):
+            return f"{self._humanize_key(leaf[:-6])} (Stunden)"
+        if leaf.endswith("_minutes"):
+            return f"{self._humanize_key(leaf[:-8])} (Minuten)"
+        if leaf.endswith("_days"):
+            return f"{self._humanize_key(leaf[:-5])} (Tage)"
+        if leaf.endswith("_labels"):
+            return f"{self._humanize_key(leaf[:-7])}-Bezeichnungen"
+        if leaf.startswith("default_"):
+            return f"Standard-{self._humanize_key(leaf[8:])}"
         return self._humanize_key(meta.leaf_name)
+
+    def _setting_subject(self, meta: SettingMeta, suffix: str) -> str:
+        leaf = meta.leaf_name.casefold()
+        base = leaf[: -len(suffix)] if suffix and leaf.endswith(suffix) else leaf
+        base = base.rstrip("_")
+        if not base:
+            return "diese Einstellung"
+        return self._lower_first(self._humanize_key(base))
+
+    def setting_description(self, meta: SettingMeta) -> str:
+        full = meta.full_path.casefold()
+        leaf = meta.leaf_name.casefold()
+        if full in SETTING_DESCRIPTION_OVERRIDES:
+            return SETTING_DESCRIPTION_OVERRIDES[full]
+        if leaf == "enabled":
+            return "Aktiviert oder deaktiviert das komplette Modul für diese Guild."
+        if leaf.endswith("_enabled"):
+            return f"Schaltet {self._setting_subject(meta, '_enabled')} für diese Guild ein oder aus."
+        if leaf.endswith("_channel_id"):
+            return f"Legt fest, welcher Kanal für {self._setting_subject(meta, '_channel_id')} verwendet wird."
+        if leaf.endswith("_thread_id"):
+            return f"Legt fest, welcher Thread für {self._setting_subject(meta, '_thread_id')} verwendet wird."
+        if leaf.endswith("_role_id"):
+            return f"Legt fest, welche Rolle für {self._setting_subject(meta, '_role_id')} verwendet wird."
+        if leaf.endswith("_user_id"):
+            return f"Legt fest, welcher Nutzer für {self._setting_subject(meta, '_user_id')} verwendet wird."
+        if leaf.endswith("_hours"):
+            return f"Bestimmt die Anzahl der Stunden für {self._setting_subject(meta, '_hours')}."
+        if leaf.endswith("_minutes"):
+            return f"Bestimmt die Anzahl der Minuten für {self._setting_subject(meta, '_minutes')}."
+        if leaf.endswith("_days"):
+            return f"Bestimmt die Anzahl der Tage für {self._setting_subject(meta, '_days')}."
+        if leaf.endswith("_labels"):
+            return f"Definiert eigene sichtbare Namen für {self._setting_subject(meta, '_labels')}."
+        if leaf.startswith("default_"):
+            return f"Legt den Standardwert für {self._lower_first(self._humanize_key(leaf[8:]))} fest."
+        if leaf in {"title", "body", "description", "message", "content", "template", "prompt", "footer"}:
+            return "Textinhalt, der vom Modul sichtbar ausgespielt, versendet oder in Embeds verwendet wird."
+        if meta.kind == "bool":
+            return "Schaltet diese Funktion für die ausgewählte Guild ein oder aus."
+        if meta.kind in {"int", "float"}:
+            return "Numerischer Steuerwert für dieses Verhalten."
+        if meta.kind == "list":
+            return "Liste mehrerer Werte, die dieses Verhalten erweitern oder einschränken."
+        if meta.kind == "dict":
+            return "Strukturierte Einstellungen mit mehreren Teilwerten."
+        return "Diese Einstellung steuert einen Teil des Modulverhaltens für die ausgewählte Guild."
 
     def setting_payload(self, guild_id: int, meta: SettingMeta) -> dict[str, Any]:
         current_value = self.current_value(guild_id, meta)
@@ -448,6 +554,7 @@ class SetupService:
         return {
             "module_key": meta.module_key,
             "label": self._setting_label(meta),
+            "description": self.setting_description(meta),
             "leaf_name": meta.leaf_name,
             "relative_path": meta.relative_path,
             "parent_path": self._parent_path(meta.relative_path),

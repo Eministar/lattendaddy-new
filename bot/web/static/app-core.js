@@ -254,6 +254,15 @@ window.statusBadge = function statusBadge(status) {
   return { text: "offen" };
 };
 
+window.ticketThreadLabel = function ticketThreadLabel(ticket) {
+  if (!ticket) return "Unbekannter Thread";
+  const resolved = channelLabel(ticket.thread_id);
+  if (resolved && resolved !== "Unbekannter Kanal") return resolved;
+  if (ticket.thread_name) return String(ticket.thread_name);
+  if (ticket.thread_id) return `Ticket-Thread · ${String(ticket.thread_id).slice(-6)}`;
+  return "Unbekannter Thread";
+};
+
 window.currentTicket = function currentTicket() {
   return ticketCache.find((ticket) => String(ticket.id) === String(state.selectedTicketId)) || null;
 };
@@ -287,7 +296,7 @@ window.renderTicketDetail = function renderTicketDetail() {
     <div class="ticket-focus-grid">
       <div class="ticket-focus-item">
         <span>Thread</span>
-        <strong>${escapeHtml(channelLabel(ticket.thread_id))}</strong>
+        <strong>${escapeHtml(ticketThreadLabel(ticket))}</strong>
       </div>
       <div class="ticket-focus-item">
         <span>Claimed by</span>
@@ -312,7 +321,7 @@ window.populateOperationalSelectors = function populateOperationalSelectors() {
   const channels = channelCandidates(true);
   const threads = ticketCache.map((ticket) => ({
     id: ticket.thread_id,
-    name: channelLabel(ticket.thread_id),
+    name: ticketThreadLabel(ticket),
     parent_name: "",
     type: "ticket",
   }));
@@ -367,7 +376,7 @@ window.renderTickets = function renderTickets() {
         <small class="ticket-meta">${escapeHtml(formatDate(ticket.created_at))}</small>
       </div>
       <div><strong>User:</strong> ${escapeHtml(memberLabel(ticket.user_id))}</div>
-      <div><strong>Thread:</strong> ${escapeHtml(channelLabel(ticket.thread_id))}</div>
+      <div><strong>Thread:</strong> ${escapeHtml(ticketThreadLabel(ticket))}</div>
       <div><strong>Claimed by:</strong> ${escapeHtml(ticket.claimed_by ? memberLabel(ticket.claimed_by) : "Niemand")}</div>
       <div><strong>Rating:</strong> <code>${escapeHtml(text(ticket.rating, "-"))}</code></div>
     `;
