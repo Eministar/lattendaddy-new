@@ -149,6 +149,76 @@ window.selectorItems = function selectorItems(setting) {
   return [];
 };
 
+window.settingGroupLabel = function settingGroupLabel(setting) {
+  const raw = String(setting.parent_path || "allgemein").trim();
+  if (!raw) return "Allgemein";
+  return raw
+    .split(".")
+    .map((part) => part ? part[0].toUpperCase() + part.slice(1) : part)
+    .join(" / ");
+};
+
+window.isMessagePointerSetting = function isMessagePointerSetting(setting) {
+  const leaf = String(setting.leaf_name || "").toLowerCase();
+  return leaf.endsWith("_message_id") || leaf === "message_id";
+};
+
+window.resolveSelectorItem = function resolveSelectorItem(setting, value) {
+  const selectorType = setting.selector_type || setting.reference_kind;
+  if (!selectorType || value === undefined || value === null || value === "") return null;
+  return selectorItems(setting).find((item) => String(item.id) === String(value)) || null;
+};
+
+window.formatSettingValue = function formatSettingValue(setting, value) {
+  if (value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length)) {
+    return "Nicht gesetzt";
+  }
+  if (isMessagePointerSetting(setting)) {
+    return "Nachricht verknüpft";
+  }
+  if ((setting.selector_type || setting.reference_kind) && setting.kind !== "list") {
+    const item = resolveSelectorItem(setting, value);
+    return item ? resourceOptionLabel(item, setting.selector_type || setting.reference_kind) : "Nicht gefunden";
+  }
+  if ((setting.selector_type || setting.reference_kind) && setting.kind === "list") {
+    const values = Array.isArray(value) ? value : [];
+    if (!values.length) return "Nicht gesetzt";
+    return values
+      .map((entry) => {
+        const item = resolveSelectorItem(setting, entry);
+        return item ? resourceOptionLabel(item, setting.selector_type || setting.reference_kind) : null;
+      })
+      .filter(Boolean)
+      .slice(0, 4)
+      .join(", ") + (values.length > 4 ? ` +${values.length - 4}` : "");
+  }
+  if (setting.kind === "bool") return value ? "Aktiviert" : "Deaktiviert";
+  if (setting.kind === "list") return Array.isArray(value) && value.length ? `${value.length} Einträge` : "Keine Einträge";
+  if (setting.kind === "dict") return value && typeof value === "object" ? `${Object.keys(value).length} Felder` : "Leeres Objekt";
+  const textValue = String(value);
+  return textValue.length > 140 ? `${textValue.slice(0, 140)}…` : textValue;
+};
+
+window.sliderSpecForSetting = function sliderSpecForSetting(setting) {
+  if (!["int", "float"].includes(setting.kind) || setting.selector_type) return null;
+  const path = String(setting.relative_path || "").toLowerCase();
+  if (path.endsWith("_id") || path.endsWith("_ids")) return null;
+  const current = Number(setting.current_value ?? setting.global_value ?? setting.default_value ?? 0);
+  if (!Number.isFinite(current)) return null;
+
+  if (path.includes("priority")) return { min: 1, max: 5, step: 1 };
+  if (path.includes("percent") || path.includes("chance")) return { min: 0, max: 100, step: setting.kind === "float" ? 0.1 : 1 };
+  if (path.includes("minute")) return { min: 0, max: Math.max(240, Math.ceil(current / 10) * 10 || 60), step: 1 };
+  if (path.includes("hour")) return { min: 0, max: Math.max(72, Math.ceil(current / 5) * 5 || 24), step: 1 };
+  if (path.includes("day")) return { min: 0, max: Math.max(365, Math.ceil(current / 10) * 10 || 30), step: 1 };
+  if (path.includes("limit") || path.includes("count") || path.includes("max") || path.includes("min")) {
+    return { min: 0, max: Math.max(100, Math.ceil(current / 10) * 10 || 25), step: 1 };
+  }
+  if (Math.abs(current) <= 100) return { min: 0, max: 100, step: setting.kind === "float" ? 0.1 : 1 };
+  if (Math.abs(current) <= 500) return { min: 0, max: 500, step: setting.kind === "float" ? 0.5 : 1 };
+  return null;
+};
+
 window.settingNeedsTextarea = function settingNeedsTextarea(setting) {
   const path = String(setting.relative_path || "").toLowerCase();
   if (setting.kind === "dict") return true;
@@ -169,7 +239,7 @@ window.buildSelectForSetting = function buildSelectForSetting(setting, currentVa
   items.forEach((item) => {
     const option = document.createElement("option");
     option.value = String(item.id);
-    option.textContent = optionLabel(item);
+    option.textContent = resourceOptionLabel(item, setting.selector_type || setting.reference_kind || "");
     if (String(item.id) === current) {
       option.selected = true;
       found = true;
@@ -189,15 +259,19 @@ window.buildSelectForSetting = function buildSelectForSetting(setting, currentVa
 window.buildValueControl = function buildValueControl(setting) {
   const currentValue = setting.current_value ?? setting.global_value ?? "";
   if (setting.kind === "bool") {
-    const select = createElement("select");
-    [["true", "Aktiviert"], ["false", "Deaktiviert"]].forEach(([value, label]) => {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = label;
-      if (String(currentValue) === value) option.selected = true;
-      select.appendChild(option);
+    const wrapper = createElement("label", "switch");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = Boolean(currentValue);
+    const slider = createElement("span", "switch-slider");
+    const copy = createElement("span", "switch-copy", input.checked ? "Aktiviert" : "Deaktiviert");
+    input.addEventListener("change", () => {
+      copy.textContent = input.checked ? "Aktiviert" : "Deaktiviert";
     });
-    return { node: select, getValue: () => select.value === "true" };
+    wrapper.appendChild(input);
+    wrapper.appendChild(slider);
+    wrapper.appendChild(copy);
+    return { node: wrapper, getValue: () => input.checked, control: input };
   }
   if (setting.selector_type && setting.kind !== "list") {
     const select = buildSelectForSetting(setting, currentValue);
@@ -227,6 +301,35 @@ window.buildValueControl = function buildValueControl(setting) {
     area.placeholder = setting.sensitive ? "Neuen Wert setzen" : (setting.example || "Textwert");
     return { node: area, getValue: () => area.value };
   }
+  const sliderSpec = sliderSpecForSetting(setting);
+  if (sliderSpec) {
+    const wrap = createElement("div", "field-editor");
+    const input = createElement("input");
+    input.type = "range";
+    input.min = String(sliderSpec.min);
+    input.max = String(sliderSpec.max);
+    input.step = String(sliderSpec.step);
+    input.value = String(currentValue || 0);
+    const number = createElement("input");
+    number.type = "number";
+    number.min = String(sliderSpec.min);
+    number.max = String(sliderSpec.max);
+    number.step = String(sliderSpec.step);
+    number.value = String(currentValue || 0);
+    const live = createElement("div", "setting-hint", `Bereich: ${sliderSpec.min} bis ${sliderSpec.max}`);
+    input.addEventListener("input", () => {
+      number.value = input.value;
+      live.textContent = `Aktueller Wert: ${input.value}`;
+    });
+    number.addEventListener("input", () => {
+      input.value = number.value || "0";
+      live.textContent = `Aktueller Wert: ${number.value || "0"}`;
+    });
+    wrap.appendChild(input);
+    wrap.appendChild(number);
+    wrap.appendChild(live);
+    return { node: wrap, getValue: () => number.value.trim() };
+  }
   const input = createElement("input");
   if (setting.kind === "int" || setting.kind === "float") input.type = "number";
   input.value = setting.sensitive ? "" : String(currentValue || "");
@@ -236,7 +339,8 @@ window.buildValueControl = function buildValueControl(setting) {
 
 window.createListChip = function createListChip(setting, value) {
   const chip = createElement("div", "chip");
-  chip.innerHTML = `<span>${escapeHtml(String(value))}</span>`;
+  const item = resolveSelectorItem(setting, value);
+  chip.innerHTML = `<span>${escapeHtml(item ? resourceOptionLabel(item, setting.selector_type || setting.reference_kind || "") : String(value))}</span>`;
   const button = createElement("button", null, "Entfernen");
   button.type = "button";
   button.onclick = async () => {
@@ -255,23 +359,27 @@ window.buildSettingCard = function buildSettingCard(setting) {
   const sourceClass = setting.has_override ? "setting-source override" : "setting-source";
   card.innerHTML = `
     <div class="setting-head">
-      <div>
+      <div class="setting-copy">
         <div class="setting-path">${escapeHtml(setting.label || setting.relative_path)}</div>
         <div class="setting-type">${escapeHtml(setting.relative_path)} · ${escapeHtml(setting.type_label)}${setting.selector_type ? ` · ${escapeHtml(setting.selector_type)}` : ""}</div>
       </div>
       <div class="${sourceClass}">${setting.has_override ? "Guild-Override" : "Global"}</div>
     </div>
-    <div class="setting-values">
-      <div class="setting-value-box">
-        <div class="setting-value-label">Aktuell</div>
-        <div class="setting-value-text">${escapeHtml(setting.current_display)}</div>
-      </div>
-      <div class="setting-value-box">
-        <div class="setting-value-label">Global</div>
-        <div class="setting-value-text">${escapeHtml(setting.global_display)}</div>
-      </div>
-    </div>
   `;
+  const values = createElement("div", "setting-values");
+  const currentBox = createElement("div", "setting-value-box");
+  currentBox.innerHTML = `
+    <div class="setting-value-label">Aktuell</div>
+    <div class="setting-value-text">${escapeHtml(formatSettingValue(setting, setting.current_value))}</div>
+  `;
+  const globalBox = createElement("div", "setting-value-box");
+  globalBox.innerHTML = `
+    <div class="setting-value-label">Basis</div>
+    <div class="setting-value-text">${escapeHtml(formatSettingValue(setting, setting.global_value))}</div>
+  `;
+  values.appendChild(currentBox);
+  values.appendChild(globalBox);
+  card.appendChild(values);
   const editor = createElement("div", "setting-editor");
 
   if (setting.kind === "list" && setting.selector_type) {
@@ -314,7 +422,7 @@ window.buildSettingCard = function buildSettingCard(setting) {
     editor.appendChild(control.node);
     if (setting.example) editor.appendChild(createElement("div", "setting-hint", `Beispiel: ${setting.example}`));
     const actions = createElement("div", "setting-actions");
-    const saveBtn = createElement("button", "primary", "Speichern");
+    const saveBtn = createElement("button", "primary", setting.kind === "bool" ? "Übernehmen" : "Speichern");
     saveBtn.type = "button";
     saveBtn.onclick = async () => {
       try {
@@ -359,6 +467,7 @@ window.renderModuleEditor = function renderModuleEditor() {
   const detail = state.moduleDetail;
   const settingsRoot = $("moduleSettings");
   settingsRoot.innerHTML = "";
+  settingsRoot.className = "module-settings-shell";
   if (!detail) {
     $("moduleTitle").textContent = "Kein Modul gewählt";
     $("moduleSubtitle").textContent = state.moduleError || "Wähle links ein Modul aus.";
@@ -381,7 +490,20 @@ window.renderModuleEditor = function renderModuleEditor() {
     settingsRoot.innerHTML = '<div class="empty-state">Keine Settings für diese Suche gefunden.</div>';
     return;
   }
-  settings.forEach((setting) => settingsRoot.appendChild(buildSettingCard(setting)));
+  const groups = new Map();
+  settings.forEach((setting) => {
+    const key = String(setting.parent_path || "allgemein");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(setting);
+  });
+  for (const [groupKey, groupSettings] of groups.entries()) {
+    const section = createElement("section", "setting-group");
+    section.appendChild(createElement("div", "setting-group-title", settingGroupLabel({ parent_path: groupKey })));
+    const grid = createElement("div", "settings-grid");
+    groupSettings.forEach((setting) => grid.appendChild(buildSettingCard(setting)));
+    section.appendChild(grid);
+    settingsRoot.appendChild(section);
+  }
 };
 
 window.loadModules = async function loadModules() {

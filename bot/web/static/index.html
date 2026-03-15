@@ -140,18 +140,22 @@
             <div id="tickets" class="list"></div>
           </div>
           <div class="card">
-            <div class="card-head"><h3>Aktionen</h3></div>
+            <div class="card-head">
+              <h3>Bearbeiten</h3>
+              <div id="ticketSelectedBadge" class="badge">Kein Ticket gewählt</div>
+            </div>
+            <div id="ticketDetail" class="empty-state">Wähle links ein Ticket aus, um Status, Besitzer und Aktionen zu sehen.</div>
             <div class="form-grid">
-              <input id="ticketThreadId" type="text" placeholder="Thread ID">
-              <input id="ticketActorId" type="text" placeholder="Staff User ID">
-              <input id="ticketUserId" type="text" placeholder="User ID (optional)">
+              <select id="ticketThreadId"></select>
+              <select id="ticketActorId"></select>
+              <select id="ticketUserId"></select>
               <select id="ticketAction">
                 <option value="claim">Claim</option>
                 <option value="release">Release</option>
                 <option value="close">Close</option>
                 <option value="add_user">User hinzufügen</option>
               </select>
-              <input id="ticketReason" type="text" placeholder="Grund (optional)">
+              <textarea id="ticketReason" placeholder="Grund oder interner Hinweis (optional)"></textarea>
               <button id="ticketActionBtn" class="primary">Ausführen</button>
             </div>
           </div>
@@ -198,8 +202,8 @@
           <div class="card">
             <div class="card-head"><h3>Timeout</h3></div>
             <div class="form-grid">
-              <input id="timeoutUserId" type="text" placeholder="User ID">
-              <input id="timeoutModeratorId" type="text" placeholder="Moderator ID (optional)">
+              <select id="timeoutUserId"></select>
+              <select id="timeoutModeratorId"></select>
               <input id="timeoutMinutes" type="number" placeholder="Minuten">
               <input id="timeoutReason" type="text" placeholder="Grund (optional)">
               <button id="timeoutBtn" class="primary">Timeout</button>
@@ -208,12 +212,12 @@
           <div class="card">
             <div class="card-head"><h3>Kick / Ban</h3></div>
             <div class="form-grid">
-              <input id="kickUserId" type="text" placeholder="User ID">
-              <input id="kickModeratorId" type="text" placeholder="Moderator ID (optional)">
+              <select id="kickUserId"></select>
+              <select id="kickModeratorId"></select>
               <input id="kickReason" type="text" placeholder="Grund (optional)">
               <button id="kickBtn">Kick</button>
-              <input id="banUserId" type="text" placeholder="User ID">
-              <input id="banModeratorId" type="text" placeholder="Moderator ID (optional)">
+              <select id="banUserId"></select>
+              <select id="banModeratorId"></select>
               <input id="banDays" type="number" placeholder="Delete Days (0-7)">
               <input id="banReason" type="text" placeholder="Grund (optional)">
               <button id="banBtn" class="primary">Ban</button>
@@ -223,10 +227,10 @@
         <div class="card">
           <div class="card-head"><h3>Purge</h3></div>
           <div class="form-grid">
-            <input id="purgeChannelId" type="text" placeholder="Channel ID">
-            <input id="purgeModeratorId" type="text" placeholder="Moderator ID (optional)">
+            <select id="purgeChannelId"></select>
+            <select id="purgeModeratorId"></select>
             <input id="purgeAmount" type="number" placeholder="Anzahl (1-100)">
-            <input id="purgeUserId" type="text" placeholder="User ID (optional)">
+            <select id="purgeUserId"></select>
             <button id="purgeBtn" class="primary">Purge</button>
           </div>
         </div>
@@ -238,16 +242,16 @@
           <div class="card">
             <div class="card-head"><h3>Rolle hinzufügen</h3></div>
             <div class="form-grid">
-              <input id="roleAddUserId" type="text" placeholder="User ID">
-              <input id="roleAddRoleId" type="text" placeholder="Role ID">
+              <select id="roleAddUserId"></select>
+              <select id="roleAddRoleId"></select>
               <button id="roleAddBtn" class="primary">Hinzufügen</button>
             </div>
           </div>
           <div class="card">
             <div class="card-head"><h3>Rolle entfernen</h3></div>
             <div class="form-grid">
-              <input id="roleRemoveUserId" type="text" placeholder="User ID">
-              <input id="roleRemoveRoleId" type="text" placeholder="Role ID">
+              <select id="roleRemoveUserId"></select>
+              <select id="roleRemoveRoleId"></select>
               <button id="roleRemoveBtn">Entfernen</button>
             </div>
           </div>

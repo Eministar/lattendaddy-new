@@ -20,6 +20,10 @@ $("refreshGuild").onclick = () => loadGuildSummary().then(() => toast("Guild akt
 
 $("ticketsReload").onclick = () => loadTickets().then(() => toast("Tickets geladen")).catch((err) => toast(err.message));
 $("ticketSearch").addEventListener("input", renderTickets);
+$("ticketThreadId").addEventListener("change", () => {
+  const ticket = ticketCache.find((entry) => String(entry.thread_id) === String($("ticketThreadId").value));
+  if (ticket) selectTicket(ticket.id);
+});
 $("ticketActionBtn").onclick = () => {
   const gid = requireGuild();
   postJson(`/api/guilds/${gid}/tickets/action`, {
@@ -28,7 +32,10 @@ $("ticketActionBtn").onclick = () => {
     user_id: $("ticketUserId").value.trim(),
     action: $("ticketAction").value,
     reason: $("ticketReason").value.trim(),
-  }).then(() => toast("Ticket Aktion ausgeführt")).catch((err) => toast(err.message));
+  }).then(async () => {
+    await loadTickets();
+    toast("Ticket Aktion ausgeführt");
+  }).catch((err) => toast(err.message));
 };
 
 $("sendMessage").onclick = () => {

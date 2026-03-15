@@ -9,6 +9,7 @@ const state = window.state = {
   moduleKey: null,
   moduleDetail: null,
   moduleError: null,
+  selectedTicketId: null,
 };
 
 let ticketCache = window.ticketCache = [];
@@ -188,21 +189,49 @@ window.resolveResource = function resolveResource(listKey, id) {
 
 window.memberLabel = function memberLabel(userId) {
   const member = resolveResource("members", userId);
-  if (!member) return `User ${userId}`;
-  return `${member.display_name} (${member.id})`;
+  if (!member) return "Unbekannter Nutzer";
+  return String(member.display_name || member.name || "Unbekannter Nutzer");
 };
 
 window.channelLabel = function channelLabel(channelId) {
   const channel = resolveResource("channels", channelId) || resolveResource("threads", channelId);
-  if (!channel) return `Channel ${channelId}`;
+  if (!channel) return "Unbekannter Kanal";
   const parent = channel.parent_name ? `${channel.parent_name} / ` : "";
-  return `${parent}${channel.name} (${channel.id})`;
+  return `${parent}${channel.name}`;
 };
 
 window.roleLabel = function roleLabel(roleId) {
   const role = resolveResource("roles", roleId);
-  if (!role) return `Rolle ${roleId}`;
-  return `${role.name} (${role.id})`;
+  if (!role) return "Unbekannte Rolle";
+  return String(role.name || "Unbekannte Rolle");
+};
+
+window.resourceOptionLabel = function resourceOptionLabel(item, kind = "") {
+  if (!item) return "Unbekannter Eintrag";
+  if (kind === "user") {
+    if (item.display_name && item.name && item.display_name !== item.name) {
+      return `${item.display_name} · @${item.name}`;
+    }
+    return item.display_name || item.name || "Unbekannter Nutzer";
+  }
+  if (kind === "role") {
+    return item.name || "Unbekannte Rolle";
+  }
+  if (kind === "thread") {
+    const parent = item.parent_name ? `${item.parent_name} / ` : "";
+    return `${parent}${item.name || "Thread"}`;
+  }
+  if (kind === "channel") {
+    const parent = item.parent_name || item.category_name ? `${item.parent_name || item.category_name} / ` : "";
+    const type = item.type ? ` · ${item.type}` : "";
+    return `${parent}${item.name || "Kanal"}${type}`;
+  }
+  if (item.display_name || item.name) {
+    return item.display_name && item.name && item.display_name !== item.name
+      ? `${item.display_name} · @${item.name}`
+      : (item.display_name || item.name);
+  }
+  return String(item.id || "Eintrag");
 };
 
 window.parseFields = function parseFields(raw) {
@@ -225,6 +254,96 @@ window.statusBadge = function statusBadge(status) {
   return { text: "offen" };
 };
 
+window.currentTicket = function currentTicket() {
+  return ticketCache.find((ticket) => String(ticket.id) === String(state.selectedTicketId)) || null;
+};
+
+window.selectTicket = function selectTicket(ticketId) {
+  state.selectedTicketId = ticketId ? String(ticketId) : null;
+  renderTickets();
+  renderTicketDetail();
+  populateOperationalSelectors();
+};
+
+window.renderTicketDetail = function renderTicketDetail() {
+  const ticket = currentTicket();
+  const root = $("ticketDetail");
+  const badge = $("ticketSelectedBadge");
+  if (!root || !badge) return;
+  if (!ticket) {
+    badge.textContent = "Kein Ticket gewählt";
+    root.className = "empty-state";
+    root.textContent = "Wähle links ein Ticket aus, um Status, Besitzer und Aktionen zu sehen.";
+    return;
+  }
+  const status = statusBadge(ticket.status);
+  badge.textContent = `#${ticket.id} · ${status.text}`;
+  root.className = "ticket-focus";
+  root.innerHTML = `
+    <div class="ticket-focus-head">
+      <div class="ticket-focus-user">${escapeHtml(memberLabel(ticket.user_id))}</div>
+      <div class="ticket-focus-status">${escapeHtml(status.text)}</div>
+    </div>
+    <div class="ticket-focus-grid">
+      <div class="ticket-focus-item">
+        <span>Thread</span>
+        <strong>${escapeHtml(channelLabel(ticket.thread_id))}</strong>
+      </div>
+      <div class="ticket-focus-item">
+        <span>Claimed by</span>
+        <strong>${escapeHtml(ticket.claimed_by ? memberLabel(ticket.claimed_by) : "Niemand")}</strong>
+      </div>
+      <div class="ticket-focus-item">
+        <span>Erstellt</span>
+        <strong>${escapeHtml(formatDate(ticket.created_at))}</strong>
+      </div>
+      <div class="ticket-focus-item">
+        <span>Bewertung</span>
+        <strong>${escapeHtml(text(ticket.rating, "Keine"))}</strong>
+      </div>
+    </div>
+  `;
+};
+
+window.populateOperationalSelectors = function populateOperationalSelectors() {
+  if (!state.resources) return;
+  const members = state.resources.members || [];
+  const roles = state.resources.roles || [];
+  const channels = channelCandidates(true);
+  const threads = ticketCache.map((ticket) => ({
+    id: ticket.thread_id,
+    name: channelLabel(ticket.thread_id),
+    parent_name: "",
+    type: "ticket",
+  }));
+  const uniqueThreads = [];
+  const seenThreads = new Set();
+  threads.forEach((thread) => {
+    const key = String(thread.id);
+    if (seenThreads.has(key)) return;
+    seenThreads.add(key);
+    uniqueThreads.push(thread);
+  });
+
+  fillTypedSelect("ticketThreadId", uniqueThreads, "Ticket-Thread wählen", "thread", currentTicket()?.thread_id || "");
+  fillTypedSelect("ticketActorId", members, "Staff-Mitglied wählen", "user", $("ticketActorId")?.value || state.user?.id || "");
+  fillTypedSelect("ticketUserId", members, "Teilnehmer wählen", "user", "");
+
+  fillTypedSelect("timeoutUserId", members, "User wählen", "user", $("timeoutUserId")?.value || "");
+  fillTypedSelect("timeoutModeratorId", members, "Moderator wählen", "user", $("timeoutModeratorId")?.value || state.user?.id || "");
+  fillTypedSelect("kickUserId", members, "User wählen", "user", $("kickUserId")?.value || "");
+  fillTypedSelect("kickModeratorId", members, "Moderator wählen", "user", $("kickModeratorId")?.value || state.user?.id || "");
+  fillTypedSelect("banUserId", members, "User wählen", "user", $("banUserId")?.value || "");
+  fillTypedSelect("banModeratorId", members, "Moderator wählen", "user", $("banModeratorId")?.value || state.user?.id || "");
+  fillTypedSelect("purgeChannelId", channels, "Kanal wählen", "channel", $("purgeChannelId")?.value || "");
+  fillTypedSelect("purgeModeratorId", members, "Moderator wählen", "user", $("purgeModeratorId")?.value || state.user?.id || "");
+  fillTypedSelect("purgeUserId", members, "Optional: nur diesen User", "user", $("purgeUserId")?.value || "");
+  fillTypedSelect("roleAddUserId", members, "User wählen", "user", $("roleAddUserId")?.value || "");
+  fillTypedSelect("roleAddRoleId", roles, "Rolle wählen", "role", $("roleAddRoleId")?.value || "");
+  fillTypedSelect("roleRemoveUserId", members, "User wählen", "user", $("roleRemoveUserId")?.value || "");
+  fillTypedSelect("roleRemoveRoleId", roles, "Rolle wählen", "role", $("roleRemoveRoleId")?.value || "");
+};
+
 window.renderTickets = function renderTickets() {
   const root = $("tickets");
   const query = $("ticketSearch").value.trim().toLowerCase();
@@ -240,7 +359,8 @@ window.renderTickets = function renderTickets() {
   }
   rows.forEach((ticket) => {
     const badge = statusBadge(ticket.status);
-    const div = createElement("div", "ticket");
+    const selectedClass = String(ticket.id) === String(state.selectedTicketId) ? " selected" : "";
+    const div = createElement("div", `ticket${selectedClass}`);
     div.innerHTML = `
       <div class="ticket-row">
         <span class="badge-status">${escapeHtml(badge.text)} · #${escapeHtml(ticket.id)}</span>
@@ -248,9 +368,10 @@ window.renderTickets = function renderTickets() {
       </div>
       <div><strong>User:</strong> ${escapeHtml(memberLabel(ticket.user_id))}</div>
       <div><strong>Thread:</strong> ${escapeHtml(channelLabel(ticket.thread_id))}</div>
-      <div><strong>Claimed by:</strong> ${escapeHtml(ticket.claimed_by ? memberLabel(ticket.claimed_by) : "-")}</div>
+      <div><strong>Claimed by:</strong> ${escapeHtml(ticket.claimed_by ? memberLabel(ticket.claimed_by) : "Niemand")}</div>
       <div><strong>Rating:</strong> <code>${escapeHtml(text(ticket.rating, "-"))}</code></div>
     `;
+    div.onclick = () => selectTicket(ticket.id);
     root.appendChild(div);
   });
 };
@@ -302,13 +423,22 @@ window.channelCandidates = function channelCandidates(forMessaging = false) {
 };
 
 window.optionLabel = function optionLabel(item) {
-  const parent = item.parent_name ? `${item.parent_name} / ` : "";
-  const type = item.type ? ` · ${item.type}` : "";
-  return `${parent}${item.name}${type}`;
+  if (!item) return "Eintrag";
+  if (item.display_name || item.name) {
+    if ("parent_name" in item || "category_name" in item || item.type) {
+      return resourceOptionLabel(item, item.type === "thread" ? "thread" : "channel");
+    }
+    if ("position" in item && !("display_name" in item)) {
+      return resourceOptionLabel(item, "role");
+    }
+    return resourceOptionLabel(item, "user");
+  }
+  return String(item.id || "Eintrag");
 };
 
 window.fillSelect = function fillSelect(selectId, items, placeholder, currentValue = "") {
   const select = $(selectId);
+  if (!select) return;
   select.innerHTML = "";
   const empty = document.createElement("option");
   empty.value = "";
@@ -318,6 +448,23 @@ window.fillSelect = function fillSelect(selectId, items, placeholder, currentVal
     const option = document.createElement("option");
     option.value = String(item.id);
     option.textContent = optionLabel(item);
+    if (String(item.id) === String(currentValue || "")) option.selected = true;
+    select.appendChild(option);
+  });
+};
+
+window.fillTypedSelect = function fillTypedSelect(selectId, items, placeholder, kind, currentValue = "") {
+  const select = $(selectId);
+  if (!select) return;
+  select.innerHTML = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = placeholder;
+  select.appendChild(empty);
+  items.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = String(item.id);
+    option.textContent = resourceOptionLabel(item, kind);
     if (String(item.id) === String(currentValue || "")) option.selected = true;
     select.appendChild(option);
   });
@@ -405,7 +552,9 @@ window.loadResources = async function loadResources() {
   const gid = requireGuild();
   state.resources = await api(`/api/guilds/${gid}/resources`);
   populateMessagingSelectors();
+  populateOperationalSelectors();
   renderTickets();
+  renderTicketDetail();
   renderApplicationsList();
   if (window.renderModuleEditor) renderModuleEditor();
 };
@@ -413,7 +562,12 @@ window.loadResources = async function loadResources() {
 window.loadTickets = async function loadTickets() {
   const gid = requireGuild();
   ticketCache = window.ticketCache = await api(`/api/guilds/${gid}/tickets?limit=200`);
+  if (!currentTicket() && ticketCache.length) {
+    state.selectedTicketId = String(ticketCache[0].id);
+  }
   renderTickets();
+  renderTicketDetail();
+  populateOperationalSelectors();
 };
 
 window.loadApplicationsList = async function loadApplicationsList() {
@@ -463,7 +617,7 @@ window.searchUsers = async function searchUsers() {
         ${member && member.avatar_url ? `<img class="avatar-chip" src="${escapeHtml(member.avatar_url)}" alt="Avatar">` : ""}
         <strong>${escapeHtml(row.display_name)}</strong>
       </div>
-      <div class="list-meta">${escapeHtml(row.id)}</div>
+      <div class="list-meta">@${escapeHtml(row.name || row.display_name)}</div>
     `;
     root.appendChild(div);
   });
@@ -486,7 +640,7 @@ window.loadLiveUsers = async function loadLiveUsers() {
         ${member && member.avatar_url ? `<img class="avatar-chip" src="${escapeHtml(member.avatar_url)}" alt="Avatar">` : ""}
         <strong>${escapeHtml(row.display_name)}</strong>
       </div>
-      <div class="list-meta">${escapeHtml(row.id)} · ${escapeHtml(row.status)}</div>
+      <div class="list-meta">${escapeHtml(row.status)}</div>
     `;
     root.appendChild(div);
   });
@@ -508,7 +662,7 @@ window.loadBirthdays = async function loadBirthdays() {
         <img class="avatar-chip" src="${escapeHtml(row.avatar_url || defaultAvatarUrlForUser({ id: row.user_id }))}" alt="Avatar">
         <strong>${escapeHtml(label)}</strong>
       </div>
-      <div class="list-meta">${escapeHtml(`${row.day}.${row.month}.${row.year}`)} · ${escapeHtml(String(row.user_id))}</div>
+      <div class="list-meta">${escapeHtml(`${row.day}.${row.month}.${row.year}`)}</div>
     `;
     root.appendChild(div);
   });
@@ -539,9 +693,9 @@ window.loadBirthdaySummary = async function loadBirthdaySummary() {
     });
   };
 
-  renderList("birthdaysToday", data.today || [], (row) => `<strong>${escapeHtml(row.display_name)}</strong><div class="list-meta">${escapeHtml(row.user_id)} · ${escapeHtml(row.age ? `wird ${row.age}` : "–")}</div>`, "Heute hat niemand Geburtstag.");
+  renderList("birthdaysToday", data.today || [], (row) => `<strong>${escapeHtml(row.display_name)}</strong><div class="list-meta">${escapeHtml(row.age ? `wird ${row.age}` : "Alter unbekannt")}</div>`, "Heute hat niemand Geburtstag.");
   renderList("birthdaysNext", data.next || [], (row) => `<strong>${escapeHtml(row.display_name)}</strong><div class="list-meta">${escapeHtml(`${row.day}.${row.month} · in ${row.days_until} Tagen${row.turns ? ` · wird ${row.turns}` : ""}`)}</div>`, "Keine anstehenden Termine.");
-  renderList("boosters", data.boosters || [], (row) => `<strong>${escapeHtml(row.display_name)}</strong><div class="list-meta">${escapeHtml(row.user_id)} · seit ${escapeHtml(formatDate(row.premium_since))}</div>`, "Keine Booster gespeichert.");
+  renderList("boosters", data.boosters || [], (row) => `<strong>${escapeHtml(row.display_name)}</strong><div class="list-meta">Booster seit ${escapeHtml(formatDate(row.premium_since))}</div>`, "Keine Booster gespeichert.");
 };
 
 window.refreshGuildData = async function refreshGuildData() {
