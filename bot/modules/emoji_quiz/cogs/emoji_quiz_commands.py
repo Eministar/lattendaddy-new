@@ -131,7 +131,13 @@ class EmojiQuizCommands(commands.Cog):
             return
         if not await self.service.can_manage(interaction.user, "emoji_quiz_start"):
             return await _ephemeral(interaction, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt.")
-        ok, msg = await self.service.start_round(interaction.guild, actor=interaction.user, category_key=category)
+        target = self._resolve_target(interaction, None, None)
+        ok, msg = await self.service.start_round(
+            interaction.guild,
+            actor=interaction.user,
+            category_key=category,
+            target_override=target,
+        )
         await _ephemeral(interaction, msg)
 
     @start.autocomplete("category")

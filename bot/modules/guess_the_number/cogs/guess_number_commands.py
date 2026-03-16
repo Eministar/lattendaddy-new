@@ -123,11 +123,13 @@ class GuessNumberCommands(commands.Cog):
             return
         if not await self.service.can_manage(interaction.user, "guess_start"):
             return await _ephemeral(interaction, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt.")
+        target = self._resolve_target(interaction, None, None)
         ok, msg = await self.service.start_round(
             interaction.guild,
             actor=interaction.user,
             min_number=minimum,
             max_number=maximum,
+            target_override=target,
         )
         await _ephemeral(interaction, msg)
 

@@ -52,6 +52,7 @@ class ActiveEmojiRound:
     auto_started: bool
     end_at: datetime
     timeout_task: asyncio.Task | None = None
+    hint_task: asyncio.Task | None = None
     attempts: int = 0
 
 
@@ -184,6 +185,15 @@ class EmojiQuizService:
     def _points_per_win(self, guild_id: int) -> int:
         return max(1, int(self.settings.get_guild_int(guild_id, "emoji_quiz.points_per_win", 10) or 10))
 
+    def _reveal_hints_enabled(self, guild_id: int) -> bool:
+        return bool(self.settings.get_guild_bool(guild_id, "emoji_quiz.reveal_hints", True))
+
+    def _first_hint_after_seconds(self, guild_id: int) -> int:
+        return max(20, int(self.settings.get_guild_int(guild_id, "emoji_quiz.first_hint_after_seconds", 90) or 90))
+
+    def _second_hint_after_seconds(self, guild_id: int) -> int:
+        return max(30, int(self.settings.get_guild_int(guild_id, "emoji_quiz.second_hint_after_seconds", 170) or 170))
+
     def _review_forum_channel_id(self, guild_id: int) -> int:
         return max(0, int(self.settings.get_guild_int(guild_id, "emoji_quiz.review_forum_channel_id", 0) or 0))
 
@@ -225,6 +235,58 @@ class EmojiQuizService:
 
     def _clean_text(self, text: str) -> str:
         return re.sub(r"\s+", " ", str(text or "")).strip()
+
+    def _masked_answer(self, answer: str, stage: int) -> str:
+        text = self._clean_text(answer)
+        if not text:
+            return "—"
+        parts = re.split(r"(\s+)", text)
+        out: list[str] = []
+        for part in parts:
+            if not part or part.isspace():
+                out.append(part)
+                continue
+            letter_indexes = [idx for idx, ch in enumerate(part) if ch.isalnum()]
+            if not letter_indexes:
+                out.append(part)
+                continue
+            if stage <= 1:
+                reveal_count = 1
+            else:
+                reveal_count = max(2, min(len(letter_indexes), (len(letter_indexes) + 1) // 2))
+            visible = set(letter_indexes[:reveal_count])
+            out.append("".join(ch if (idx in visible or not ch.isalnum()) else "•" for idx, ch in enumerate(part)))
+        return "".join(out)
+
+    async def _run_hint_sequence(self, guild: discord.Guild, round_: ActiveEmojiRound):
+        if not self._reveal_hints_enabled(guild.id):
+            return
+        checkpoints = [
+            (self._first_hint_after_seconds(guild.id), 1),
+            (self._second_hint_after_seconds(guild.id), 2),
+        ]
+        sent_after = 0
+        for after_seconds, stage in checkpoints:
+            if after_seconds <= sent_after:
+                continue
+            wait_seconds = max(1, after_seconds - sent_after)
+            sent_after = after_seconds
+            try:
+                await asyncio.sleep(wait_seconds)
+            except asyncio.CancelledError:
+                return
+            current = self._rounds.get(guild.id)
+            if current is not round_:
+                return
+            target = await self._resolve_target(guild, round_.target_channel_id, round_.target_thread_id)
+            if not isinstance(target, (discord.TextChannel, discord.Thread)):
+                return
+            try:
+                await target.send(
+                    f"💡 Tipp {stage}: **{round_.category_label}** · `{self._masked_answer(round_.answer, stage)}`"
+                )
+            except Exception:
+                return
 
     def _canonical_category_key(self, key: str | None) -> str:
         raw = self._clean_text(key or "").lower()
@@ -850,15 +912,17 @@ class EmojiQuizService:
         actor: discord.Member | None = None,
         category_key: str | None = None,
         auto_started: bool = False,
+        target_override: discord.TextChannel | discord.Thread | None = None,
     ) -> tuple[bool, str]:
         if not self._enabled(guild.id):
             return False, "Emoji-Quiz ist deaktiviert."
         if guild.id in self._rounds:
             return False, "Es läuft bereits ein Emoji-Rätsel."
         state = await self._guild_state(guild.id)
-        target = await self._resolve_target(guild, int(state["target_channel_id"]), int(state["target_thread_id"]))
+        target = target_override or await self._resolve_target(guild, int(state["target_channel_id"]), int(state["target_thread_id"]))
         if target is None:
             return False, "Kein Ziel-Channel oder Thread konfiguriert."
+        target_channel_id, target_thread_id = self._target_ids_from_channel(target)
         if category_key:
             category_key = await self.resolve_category_key(guild.id, category_key, enabled_only=True)
             if not category_key:
@@ -886,12 +950,13 @@ class EmojiQuizService:
                 round_number,
                 started_by=int(actor.id) if actor else None,
                 auto_started=auto_started,
+                hints_enabled=self._reveal_hints_enabled(guild.id),
             )
         )
         active = ActiveEmojiRound(
             guild_id=int(guild.id),
-            target_channel_id=int(state["target_channel_id"]),
-            target_thread_id=int(state["target_thread_id"]),
+            target_channel_id=int(target_channel_id),
+            target_thread_id=int(target_thread_id),
             prompt_message_id=int(message.id),
             category_key=str(chosen_key),
             category_label=str(payload["label"]),
@@ -919,6 +984,8 @@ class EmojiQuizService:
                 await self._close_without_winner(guild, active, "Timeout")
 
         active.timeout_task = asyncio.create_task(_timeout())
+        if self._reveal_hints_enabled(guild.id):
+            active.hint_task = asyncio.create_task(self._run_hint_sequence(guild, active))
         self._remember_recent_answer(guild.id, answer)
         await self.refresh_dashboard(guild)
         return True, f"Emoji-Rätsel in **{payload['label']}** gestartet."
@@ -949,6 +1016,8 @@ class EmojiQuizService:
         target = await self._resolve_target(guild, round_.target_channel_id, round_.target_thread_id)
         if round_.timeout_task:
             round_.timeout_task.cancel()
+        if round_.hint_task:
+            round_.hint_task.cancel()
         if isinstance(target, (discord.TextChannel, discord.Thread)):
             await self._delete_prompt(target, round_.prompt_message_id)
             await target.send(embed=build_closed_embed(self.settings, guild, round_.answer, round_.category_label, reason))
@@ -988,6 +1057,8 @@ class EmojiQuizService:
         target = await self._resolve_target(guild, round_.target_channel_id, round_.target_thread_id)
         if round_.timeout_task:
             round_.timeout_task.cancel()
+        if round_.hint_task:
+            round_.hint_task.cancel()
         if isinstance(target, (discord.TextChannel, discord.Thread)):
             await self._delete_prompt(target, round_.prompt_message_id)
             await target.send(
@@ -1026,7 +1097,7 @@ class EmojiQuizService:
         await self._save_player_stats(message.guild.id, message.author.id, stats)
         round_.attempts += 1
         normalized = self._normalize(content)
-        if normalized not in round_.aliases and not any(self._fuzzy_match(normalized, alias) for alias in round_.aliases):
+        if normalized not in round_.aliases:
             return
         claimed = await self._claim_round(message.guild.id, round_)
         if claimed:
@@ -1053,14 +1124,16 @@ class EmojiQuizService:
             return False, "Nur im Server nutzbar."
         if not await self.can_manage(interaction.user, "emoji_quiz_start"):
             return False, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt."
-        return await self.start_round(interaction.guild, actor=interaction.user, category_key=str(category_key))
+        target = interaction.channel if isinstance(interaction.channel, (discord.TextChannel, discord.Thread)) else None
+        return await self.start_round(interaction.guild, actor=interaction.user, category_key=str(category_key), target_override=target)
 
     async def panel_start_random(self, interaction: discord.Interaction) -> tuple[bool, str]:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return False, "Nur im Server nutzbar."
         if not await self.can_manage(interaction.user, "emoji_quiz_start"):
             return False, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt."
-        return await self.start_round(interaction.guild, actor=interaction.user)
+        target = interaction.channel if isinstance(interaction.channel, (discord.TextChannel, discord.Thread)) else None
+        return await self.start_round(interaction.guild, actor=interaction.user, target_override=target)
 
     async def panel_stop(self, interaction: discord.Interaction) -> tuple[bool, str]:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):

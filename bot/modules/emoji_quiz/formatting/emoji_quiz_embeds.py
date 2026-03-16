@@ -77,14 +77,17 @@ def build_round_embed(
     round_number: int,
     started_by: int | None = None,
     auto_started: bool = False,
+    hints_enabled: bool = False,
 ) -> discord.Embed:
     mode = "Auto-Quiz" if auto_started else "Manuell"
+    hint_text = "Aktiv" if hints_enabled else "Aus"
     desc = (
         f"## {prompt}\n\n"
         f"┏`🎮` - Runde: **#{int(round_number)}**\n"
         f"┣`🗂️` - Kategorie: **{category_label}**\n"
         f"┣`⚙️` - Modus: **{mode}**\n"
         f"┣`👤` - Gestartet von: {f'<@{int(started_by)}>' if started_by else 'System'}\n"
+        f"┣`💡` - Hinweise: **{hint_text}**\n"
         f"┗`⏱️` - Ende: {format_dt(end_at, style='R')} ({format_dt(end_at, style='t')})"
     )
     return discord.Embed(

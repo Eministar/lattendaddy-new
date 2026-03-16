@@ -400,6 +400,7 @@ class GuessNumberService:
         target = target_override or await self._resolve_target(guild, int(state["target_channel_id"]), int(state["target_thread_id"]))
         if target is None:
             return False, "Kein Ziel-Channel oder Thread konfiguriert."
+        target_channel_id, target_thread_id = self._target_ids_from_channel(target)
         lo = int(min_number if min_number is not None else state["default_min"])
         hi = int(max_number if max_number is not None else state["default_max"])
         if lo == hi:
@@ -423,8 +424,8 @@ class GuessNumberService:
         message = await target.send(embed=embed)
         active = ActiveGuessRound(
             guild_id=int(guild.id),
-            target_channel_id=int(state["target_channel_id"]),
-            target_thread_id=int(state["target_thread_id"]),
+            target_channel_id=int(target_channel_id),
+            target_thread_id=int(target_thread_id),
             prompt_message_id=int(message.id),
             answer_number=int(answer),
             min_number=int(lo),
@@ -608,7 +609,8 @@ class GuessNumberService:
             return False, "Nur im Server nutzbar."
         if not await self.can_manage(interaction.user, "guess_start"):
             return False, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt."
-        return await self.start_round(interaction.guild, actor=interaction.user)
+        target = interaction.channel if isinstance(interaction.channel, (discord.TextChannel, discord.Thread)) else None
+        return await self.start_round(interaction.guild, actor=interaction.user, target_override=target)
 
     async def panel_stop(self, interaction: discord.Interaction) -> tuple[bool, str]:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
