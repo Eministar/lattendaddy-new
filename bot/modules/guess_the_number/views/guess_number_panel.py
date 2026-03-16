@@ -22,12 +22,10 @@ class GuessDashboardButton(discord.ui.Button):
     def __init__(self, action: str):
         labels = {
             "start": ("Start", "🎲", discord.ButtonStyle.success),
-            "stop": ("Stop", "⏹️", discord.ButtonStyle.danger),
             "leaderboard_weekly": ("Woche", "🏆", discord.ButtonStyle.secondary),
             "leaderboard_monthly": ("Monat", "🥇", discord.ButtonStyle.secondary),
             "streaks": ("Streaks", "🔥", discord.ButtonStyle.secondary),
             "stats": ("Stats", "📊", discord.ButtonStyle.secondary),
-            "auto": ("Auto", "⚙️", discord.ButtonStyle.primary),
         }
         label, emoji, style = labels.get(action, ("Aktion", "🧩", discord.ButtonStyle.secondary))
         super().__init__(label=label, emoji=emoji, style=style, custom_id=f"starry:guess_dash:{action}")
@@ -42,9 +40,6 @@ class GuessDashboardButton(discord.ui.Button):
         if action == "start":
             ok, msg = await service.panel_start(interaction)
             return await _send_ephemeral(interaction, msg if not ok else "Runde gestartet.")
-        if action == "stop":
-            ok, msg = await service.panel_stop(interaction)
-            return await _send_ephemeral(interaction, msg)
         if action == "leaderboard_weekly":
             week_key, _ = service.current_period_keys()
             rows = await interaction.client.db.list_guess_number_players_top_weekly(interaction.guild.id, week_key, limit=10)
@@ -62,9 +57,6 @@ class GuessDashboardButton(discord.ui.Button):
         if action == "stats":
             text = await service.stats_summary_text(interaction.guild.id, int(interaction.user.id), interaction.guild)
             return await _send_ephemeral(interaction, text)
-        if action == "auto":
-            ok, msg = await service.panel_toggle_auto(interaction)
-            return await _send_ephemeral(interaction, msg)
         return await _send_ephemeral(interaction, "Unbekannte Aktion.")
 
 
@@ -72,9 +64,7 @@ class GuessNumberPanelView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(GuessDashboardButton("start"))
-        self.add_item(GuessDashboardButton("stop"))
         self.add_item(GuessDashboardButton("leaderboard_weekly"))
         self.add_item(GuessDashboardButton("leaderboard_monthly"))
         self.add_item(GuessDashboardButton("streaks"))
         self.add_item(GuessDashboardButton("stats"))
-        self.add_item(GuessDashboardButton("auto"))

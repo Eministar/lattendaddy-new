@@ -270,7 +270,6 @@ guess_number:
   default_min: 1
   default_max: 1000
   round_timeout_seconds: 180
-  auto_interval_seconds: 180
 
 emoji_quiz:
   enabled: true

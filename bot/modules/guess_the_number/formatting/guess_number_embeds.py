@@ -33,15 +33,14 @@ def build_dashboard_view(settings, guild: discord.Guild | None, stats: dict, but
     info = em(settings, "info", guild) or "ℹ️"
     header = f"**{info} 𑁉 GUESS THE NUMBER**"
     desc = (
-        f"{arrow2} Starte ein gemeinsames Zahlen-Event im festgelegten Channel oder Thread.\n"
+        f"{arrow2} Starte ein gemeinsames Zahlen-Event direkt im aktuellen Channel oder Thread.\n"
         f"{arrow2} Wer die Zahl zuerst trifft, gewinnt die Runde und klettert im Leaderboard.\n"
-        f"{arrow2} Auto-Event kann neue Runden selbst starten und nach Timeout sauber beenden.\n\n"
+        f"{arrow2} Eine Runde bleibt schlicht: starten, raten, gewinnen.\n\n"
         f"┏`📍` - Ziel: {stats.get('target', 'Nicht gesetzt')}\n"
         f"┣`🎯` - Default-Range: **{int(stats.get('default_min', 1))}** bis **{int(stats.get('default_max', 100))}**\n"
         f"┣`👥` - Spieler: **{int(stats.get('players', 0))}**\n"
         f"┣`🎮` - Runden: **{int(stats.get('rounds', 0))}**\n"
         f"┣`👑` - Champion: {stats.get('champion', 'Noch kein Champion')}\n"
-        f"┣`⚙️` - Auto: **{stats.get('auto_status', 'Aus')}**\n"
         f"┗`🧵` - Aktiv: {stats.get('active_state', 'Keine Runde aktiv')}"
     )
     container = discord.ui.Container(accent_colour=_color(settings, guild))
@@ -69,14 +68,12 @@ def build_round_embed(
     auto_started: bool = False,
 ) -> discord.Embed:
     arrow2 = em(settings, "arrow2", guild) or "»"
-    mode = "Auto-Event" if auto_started else "Manuell"
     timer = f"{format_dt(end_at, style='R')} ({format_dt(end_at, style='t')})"
     desc = (
         f"{arrow2} Sende eine ganze Zahl im Ziel-Channel, um mitzuraten.\n\n"
         f"┏`🎮` - Runde: **#{int(round_number)}**\n"
         f"┣`🔢` - Bereich: **{int(min_number)}** bis **{int(max_number)}**\n"
         f"┣`🧠` - Tipps: **Zu hoch / Zu niedrig**\n"
-        f"┣`⚙️` - Modus: **{mode}**\n"
         f"┣`👤` - Gestartet von: {f'<@{int(started_by)}>' if started_by else 'System'}\n"
         f"┗`⏱️` - Ende: {timer}"
     )

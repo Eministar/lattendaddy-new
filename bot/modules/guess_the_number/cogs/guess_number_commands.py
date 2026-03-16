@@ -54,8 +54,6 @@ class GuessNumberCommands(commands.Cog):
         minimum="Standard-Minimum",
         maximum="Standard-Maximum",
         timeout_seconds="Rundenlänge in Sekunden",
-        auto_enabled="Auto-Event direkt aktivieren",
-        auto_interval_seconds="Abstand zwischen Auto-Runden",
     )
     async def setup(
         self,
@@ -65,8 +63,6 @@ class GuessNumberCommands(commands.Cog):
         minimum: int = 1,
         maximum: int = 100,
         timeout_seconds: int = 180,
-        auto_enabled: bool = False,
-        auto_interval_seconds: int = 180,
     ):
         if not self._need_member(interaction):
             return
@@ -84,8 +80,6 @@ class GuessNumberCommands(commands.Cog):
             default_min=int(minimum),
             default_max=int(maximum),
             timeout_seconds=int(timeout_seconds),
-            auto_interval_seconds=int(auto_interval_seconds),
-            auto_enabled=bool(auto_enabled),
         )
         await _ephemeral(interaction, f"Guess-The-Number ist jetzt in {target.mention} eingerichtet.")
 
@@ -155,17 +149,6 @@ class GuessNumberCommands(commands.Cog):
         await self.service.set_default_range(interaction.guild.id, int(minimum), int(maximum))
         await self.service.refresh_dashboard(interaction.guild)
         await _ephemeral(interaction, f"Neue Default-Range: **{int(minimum)}** bis **{int(maximum)}**")
-
-    @guess.command(name="auto", description="🤖 𑁉 Auto-Event ein- oder ausschalten")
-    @app_commands.describe(enabled="Auto-Event aktivieren?", interval_seconds="Abstand zwischen Auto-Runden")
-    async def auto(self, interaction: discord.Interaction, enabled: bool, interval_seconds: int | None = None):
-        if not self._need_member(interaction):
-            return
-        if not await self.service.can_manage(interaction.user, "guess_auto"):
-            return await _ephemeral(interaction, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt.")
-        await self.service.set_auto(interaction.guild.id, bool(enabled), interval_seconds=interval_seconds)
-        await self.service.refresh_dashboard(interaction.guild)
-        await _ephemeral(interaction, f"Auto-Event ist jetzt **{'an' if enabled else 'aus'}**.")
 
     @guess.command(name="leaderboard", description="🏆 𑁉 Guess-Leaderboard")
     @app_commands.describe(zeitraum="alltime / weekly / monthly")

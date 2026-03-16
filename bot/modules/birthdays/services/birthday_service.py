@@ -227,7 +227,6 @@ class BirthdayService:
         await self.db.add_achievement(member.guild.id, member.id, code)
         await self._grant_achievement_role(member, code)
         await self._dm_achievement(member, code)
-        await self._ensure_birthday_role(member)
 
     async def _ensure_success_role(self, member: discord.Member):
         role_id = self.settings.get_guild_int(member.guild.id, "birthday.success_role_id")
@@ -246,7 +245,6 @@ class BirthdayService:
         day, month, year = int(row[0]), int(row[1]), int(row[2])
         await self._apply_age_roles(member, year)
         await self._ensure_success_role(member)
-        await self._ensure_birthday_role(member)
 
         code = "birthday_set"
         rows = await self.db.list_achievements(member.guild.id, member.id)
@@ -258,6 +256,34 @@ class BirthdayService:
         await self._grant_achievement_role(member, code)
         await self._dm_achievement(member, code)
         return True
+
+    async def _sync_today_birthday_role(self, guild: discord.Guild, today_user_ids: set[int]):
+        role_id = self.settings.get_guild_int(guild.id, "birthday.role_id")
+        if not role_id:
+            return
+        role = guild.get_role(int(role_id))
+        if not role:
+            return
+
+        current_holders = [member for member in list(guild.members or []) if role in getattr(member, "roles", [])]
+        for member in current_holders:
+            if int(member.id) in today_user_ids:
+                continue
+            try:
+                await member.remove_roles(role, reason="Geburtstag vorbei")
+            except Exception:
+                pass
+
+        for user_id in today_user_ids:
+            member = guild.get_member(int(user_id))
+            if not isinstance(member, discord.Member):
+                continue
+            if role in getattr(member, "roles", []):
+                continue
+            try:
+                await member.add_roles(role, reason="Geburtstag heute")
+            except Exception:
+                pass
 
     async def _ensure_birthday_role(self, member: discord.Member):
         role_id = self.settings.get_guild_int(member.guild.id, "birthday.role_id")
@@ -367,6 +393,14 @@ class BirthdayService:
         return emb
 
     async def announce_today(self, guild: discord.Guild, rows: list[tuple] | None = None):
+        now = datetime.now(self._tz(guild.id))
+        today = now.date()
+        rows = rows if rows is not None else await self.db.list_birthdays_global_all()
+        today_entries, all_entries = self._collect_guild_birthdays(guild, rows, now)
+        current_rows = [(e["user_id"], e["day"], e["month"], e["year"]) for e in today_entries]
+        await self.db.replace_birthdays_current(guild.id, today.isoformat(), current_rows)
+        await self._sync_today_birthday_role(guild, {int(e["user_id"]) for e in today_entries})
+
         channel_id = self.settings.get_guild_int(guild.id, "birthday.channel_id")
         state = await self.db.get_birthday_announcement(guild.id)
         state_channel_id = int(state[0]) if state and state[0] is not None else 0
@@ -378,27 +412,11 @@ class BirthdayService:
             if state_message_id:
                 await self._delete_announcement_message(guild, state_channel_id, state_message_id)
             await self.db.clear_birthday_announcement(guild.id)
-            await self.db.clear_birthdays_current(guild.id)
-            return False
+            return bool(today_entries)
 
         ch = await self._resolve_channel(guild, channel_id)
         if not ch:
             return False
-
-        now = datetime.now(self._tz(guild.id))
-        today = now.date()
-
-        rows = rows if rows is not None else await self.db.list_birthdays_global_all()
-        today_entries, all_entries = self._collect_guild_birthdays(guild, rows, now)
-
-        current_rows = [(e["user_id"], e["day"], e["month"], e["year"]) for e in today_entries]
-        await self.db.replace_birthdays_current(guild.id, today.isoformat(), current_rows)
-
-        all_entries_sorted = sorted(
-            all_entries,
-            key=lambda e: (int(e.get("month") or 0), int(e.get("day") or 0), int(e.get("user_id") or 0)),
-        )
-        total_birthdays = len(all_entries)
 
         payload = {
             "date": today.isoformat(),
@@ -406,42 +424,28 @@ class BirthdayService:
                 {"user_id": int(e["user_id"]), "day": int(e["day"]), "month": int(e["month"]), "year": int(e["year"])}
                 for e in today_entries
             ],
-            "all": [
-                {"user_id": int(e["user_id"]), "day": int(e["day"]), "month": int(e["month"]), "year": int(e["year"])}
-                for e in all_entries_sorted
-            ],
-            "total": int(total_birthdays),
         }
         payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+        allowed = discord.AllowedMentions(users=True, roles=False, everyone=False)
+
+        if not today_entries:
+            if state_message_id:
+                await self._delete_announcement_message(guild, state_channel_id, state_message_id)
+            await self.db.clear_birthday_announcement(guild.id)
+            return False
 
         view = build_birthday_announcement_view(
             self.settings,
             guild,
             self._embed_color(None, guild=guild),
             today_entries,
-            all_entries_sorted,
-            total_birthdays,
+            all_entries,
+            len(today_entries),
         )
-        allowed = discord.AllowedMentions(users=True, roles=False, everyone=False)
 
-        if state_message_id and state_channel_id == int(channel_id):
-            if state_payload == payload_json:
-                return True
-            try:
-                msg = await ch.fetch_message(int(state_message_id))
-            except Exception:
-                msg = None
-            if msg:
-                try:
-                    await msg.edit(view=view, allowed_mentions=allowed)
-                    await self.db.set_birthday_announcement(
-                        guild.id, channel_id, int(state_message_id), today.isoformat(), payload_json
-                    )
-                    return True
-                except Exception:
-                    pass
-
-        if state_message_id and state_channel_id != int(channel_id):
+        if state_message_id and state_channel_id == int(channel_id) and state_date == today.isoformat() and state_payload == payload_json:
+            return True
+        if state_message_id:
             await self._delete_announcement_message(guild, state_channel_id, state_message_id)
 
         try:

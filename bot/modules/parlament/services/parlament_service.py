@@ -185,6 +185,94 @@ class ParliamentService:
         }
         return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
+    def _panel_status_order(self, member: discord.Member) -> int:
+        status = getattr(member, "raw_status", None) or getattr(member, "status", None)
+        raw = str(status or "offline").lower()
+        if raw == "online":
+            return 0
+        if raw == "dnd":
+            return 1
+        if raw == "idle":
+            return 2
+        return 3
+
+    def _panel_display_sort_key(self, member: discord.Member):
+        return (self._panel_status_order(member), str(member.display_name or "").lower(), int(member.id))
+
+    def _member_avatar_url(self, member: discord.Member) -> str:
+        try:
+            return str(member.display_avatar.replace(size=128, format="webp").url)
+        except Exception:
+            try:
+                return str(member.display_avatar.url)
+            except Exception:
+                return ""
+
+    async def _build_party_snapshot_map(self, guild_id: int) -> dict[int, dict]:
+        parties = await self.db.list_parliament_parties(guild_id, status="approved", limit=300)
+        party_map: dict[int, dict] = {}
+        for party_row in parties or []:
+            party = self._party_data(party_row)
+            party_id = int(party.get("id") or 0)
+            if not party_id:
+                continue
+            member_rows = await self.db.list_parliament_party_members(party_id)
+            for member_row in member_rows or []:
+                user_id = int(member_row[2] or 0)
+                if not user_id or user_id in party_map:
+                    continue
+                party_map[user_id] = {
+                    "party_id": party_id,
+                    "party_name": str(party.get("name") or "").strip() or None,
+                    "party_slug": str(party.get("slug") or "").strip() or None,
+                    "party_logo_url": str(party.get("logo_url") or "").strip() or None,
+                    "party_role": str(member_row[3] or "").strip() or None,
+                }
+        return party_map
+
+    async def _sync_current_members_snapshot(
+        self,
+        guild: discord.Guild,
+        candidates: list[discord.Member],
+        members: list[discord.Member],
+        fixed_members: list[discord.Member],
+        stats_map: dict[int, tuple[int, int]],
+    ):
+        party_map = await self._build_party_snapshot_map(guild.id)
+        rows: list[dict] = []
+        sections = [
+            ("leadership", "Leitung", 0, fixed_members, False),
+            ("candidate", "Kandidaten", 1, candidates, True),
+            ("member", "Mitglieder", 2, members, True),
+        ]
+        for section_key, section_label, section_order, source_members, sort_members in sections:
+            visible_members = sorted(source_members, key=self._panel_display_sort_key) if sort_members else list(source_members)
+            for slot_order, member in enumerate(visible_members, start=1):
+                stats = stats_map.get(int(member.id)) or (0, 0)
+                party = party_map.get(int(member.id)) or {}
+                username = str(getattr(member, "name", None) or member.display_name or "").strip()
+                rows.append(
+                    {
+                        "section_key": section_key,
+                        "section_label": section_label,
+                        "section_order": section_order,
+                        "slot_order": slot_order,
+                        "user_id": int(member.id),
+                        "display_name": str(member.display_name or username or f"User {int(member.id)}").strip(),
+                        "username": username or None,
+                        "display_handle": f"@{username}" if username else None,
+                        "avatar_url": self._member_avatar_url(member) or None,
+                        "party_id": party.get("party_id"),
+                        "party_name": party.get("party_name"),
+                        "party_slug": party.get("party_slug"),
+                        "party_logo_url": party.get("party_logo_url"),
+                        "party_role": party.get("party_role"),
+                        "elected_count": int(stats[0] or 0),
+                        "candidated_count": int(stats[1] or 0),
+                    }
+                )
+        await self.db.replace_parliament_current_members(guild.id, rows)
+
     def _extract_component_text(self, components) -> str:
         parts: list[str] = []
 
@@ -245,16 +333,22 @@ class ParliamentService:
             pass
 
     async def update_panel(self, guild: discord.Guild):
-        if not guild or not self._enabled(guild.id):
+        if not guild:
             return
-
-        channel = await self._get_channel(guild, self._panel_channel_id(guild.id))
-        if not channel:
+        if not self._enabled(guild.id):
+            try:
+                await self.db.clear_parliament_current_members(guild.id)
+            except Exception:
+                pass
             return
 
         candidate_role_id = self._candidate_role_id(guild.id)
         member_role_id = self._member_role_id(guild.id)
         if not candidate_role_id or not member_role_id:
+            try:
+                await self.db.clear_parliament_current_members(guild.id)
+            except Exception:
+                pass
             return
 
         candidates = await self._resolve_candidates(guild)
@@ -274,6 +368,15 @@ class ParliamentService:
         rows = await self.db.list_parliament_stats(guild.id, user_ids)
         stats_map = {int(r[1]): (int(r[2]), int(r[3])) for r in rows or []}
         signature = self._panel_signature(candidates, members, fixed_members, stats_map)
+
+        try:
+            await self._sync_current_members_snapshot(guild, candidates, members, fixed_members, stats_map)
+        except Exception:
+            pass
+
+        channel = await self._get_channel(guild, self._panel_channel_id(guild.id))
+        if not channel:
+            return
 
         message_id = int(self._panel_message_ids.get(guild.id, 0) or self._gi(guild.id, "parlament.panel_message_id", 0))
         msg = await self._resolve_panel_message(channel, message_id)

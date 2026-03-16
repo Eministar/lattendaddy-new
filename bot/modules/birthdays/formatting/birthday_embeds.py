@@ -49,7 +49,7 @@ def build_birthday_announcement_view(
     calendar_emoji = em(settings, "calendar", guild) or "🗓️"
 
     header = f"**{cake} 𑁉 GEBURTSTAG**"
-    intro = f"{arrow2} Heute feiern wir gemeinsam. Alles live und automatisch."
+    intro = f"{arrow2} Heute feiern wir genau diese Geburtstage im Server."
     congrats = f"{party} **Happy Birthday!** {heart}"
 
     today_lines: list[str] = []
@@ -65,35 +65,11 @@ def build_birthday_announcement_view(
 
     today_block = _boxed_lines(today_lines, "🎈 - Heute hat niemand Geburtstag.")
 
-    all_lines: list[str] = []
-    for entry in all_entries:
-        member = entry.get("member")
-        user_id = int(entry.get("user_id") or 0)
-        mention = member.mention if member else f"<@{user_id}>"
-        day = int(entry.get("day") or 0)
-        month = int(entry.get("month") or 0)
-        year = int(entry.get("year") or 0)
-        month_name = calendar.month_name[month] if month else "?"
-        when = f"{day}. {month_name}"
-        line = f"{calendar_emoji} - {mention} · {when} {year}"
-        all_lines.append(line)
-
-    all_block = _boxed_lines(all_lines, "📭 - Keine Termine gespeichert.")
-
-    stats_block = None
-    if total_birthdays is not None:
-        stats_block = f"┗📌 - Gespeichert: **{int(total_birthdays)}**"
-
     container = discord.ui.Container(accent_colour=accent_color)
     _add_banner(container)
     container.add_item(discord.ui.TextDisplay(f"{header}\n{intro}\n\n{congrats}"))
     container.add_item(discord.ui.Separator())
     container.add_item(discord.ui.TextDisplay(f"**Heute**\n{today_block}"))
-    container.add_item(discord.ui.Separator())
-    container.add_item(discord.ui.TextDisplay(f"**Alle Geburtstage**\n{all_block}"))
-    if stats_block:
-        container.add_item(discord.ui.Separator())
-        container.add_item(discord.ui.TextDisplay(stats_block))
 
     view = discord.ui.LayoutView(timeout=None)
     view.add_item(container)

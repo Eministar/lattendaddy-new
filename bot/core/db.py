@@ -517,6 +517,16 @@ class Database:
         );
         """)
         await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_stats_monthly (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            month_key VARCHAR(7) NOT NULL,
+            message_count INTEGER NOT NULL DEFAULT 0,
+            last_message_at TEXT,
+            PRIMARY KEY (guild_id, user_id, month_key)
+        );
+        """)
+        await self._conn.execute("""
         CREATE TABLE IF NOT EXISTS user_voice_sessions (
             guild_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
@@ -542,6 +552,8 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_user_stats_guild ON user_stats(guild_id)")
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_user_channel_stats_user ON user_channel_stats(guild_id, user_id)")
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_user_stats_monthly_lookup ON user_stats_monthly(guild_id, month_key, message_count)")
         await self._conn.execute("""
         CREATE TABLE IF NOT EXISTS counting_states (
             guild_id INTEGER NOT NULL,
@@ -756,6 +768,31 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_parliament_party_members_user ON parliament_party_members(guild_id, user_id)")
             await self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_parliament_party_members_party_role ON parliament_party_members(party_id, role)")
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS parliament_current_members (
+            guild_id INTEGER NOT NULL,
+            section_key VARCHAR(16) NOT NULL,
+            section_label VARCHAR(64) NOT NULL,
+            section_order INTEGER NOT NULL,
+            slot_order INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            display_name TEXT NOT NULL,
+            username TEXT,
+            display_handle TEXT,
+            avatar_url TEXT,
+            party_id INTEGER,
+            party_name TEXT,
+            party_slug TEXT,
+            party_logo_url TEXT,
+            party_role VARCHAR(32),
+            elected_count INTEGER NOT NULL DEFAULT 0,
+            candidated_count INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, section_key, user_id)
+        );
+        """)
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_parliament_current_members_order ON parliament_current_members(guild_id, section_order, slot_order)")
         await self._conn.execute("""
         CREATE TABLE IF NOT EXISTS flag_quiz_guilds (
             guild_id INTEGER NOT NULL,
@@ -1420,6 +1457,7 @@ class Database:
 
     async def increment_message(self, guild_id: int, user_id: int, channel_id: int, xp_delta: int):
         now = await self.now_iso()
+        month_key = datetime.now(timezone.utc).strftime("%Y-%m")
         await self._conn.execute("""
         INSERT INTO user_stats (guild_id, user_id, message_count, voice_seconds, welcome_count, xp, level, last_message_at)
         VALUES (?, ?, 1, 0, 0, ?, 0, ?)
@@ -1434,6 +1472,13 @@ class Database:
         ON CONFLICT(guild_id, user_id, channel_id) DO UPDATE SET
             message_count = message_count + 1;
         """, (int(guild_id), int(user_id), int(channel_id)))
+        await self._conn.execute("""
+        INSERT INTO user_stats_monthly (guild_id, user_id, month_key, message_count, last_message_at)
+        VALUES (?, ?, ?, 1, ?)
+        ON CONFLICT(guild_id, user_id, month_key) DO UPDATE SET
+            message_count = message_count + 1,
+            last_message_at = excluded.last_message_at;
+        """, (int(guild_id), int(user_id), str(month_key), now))
         await self._conn.commit()
 
     async def increment_welcome(self, guild_id: int, user_id: int):
@@ -1554,6 +1599,19 @@ class Database:
         """, (int(guild_id),))
         row = await cur.fetchone()
         return int(row[0] if row else 0)
+
+    async def list_user_stats_monthly_top(self, guild_id: int, month_key: str, limit: int = 10):
+        cur = await self._conn.execute(
+            """
+            SELECT user_id, month_key, message_count, last_message_at
+            FROM user_stats_monthly
+            WHERE guild_id = ? AND month_key = ? AND message_count > 0
+            ORDER BY message_count DESC, last_message_at ASC, user_id ASC
+            LIMIT ?;
+            """,
+            (int(guild_id), str(month_key), int(limit)),
+        )
+        return await cur.fetchall()
 
     async def get_voice_session(self, guild_id: int, user_id: int):
         cur = await self._conn.execute("""
@@ -2642,6 +2700,89 @@ class Database:
             FROM parliament_votes
             WHERE status = 'open';
             """,
+        )
+        return await cur.fetchall()
+
+    async def clear_parliament_current_members(self, guild_id: int):
+        await self._conn.execute(
+            "DELETE FROM parliament_current_members WHERE guild_id = ?;",
+            (int(guild_id),),
+        )
+        await self._conn.commit()
+
+    async def replace_parliament_current_members(self, guild_id: int, rows: list[dict]):
+        await self._conn.execute(
+            "DELETE FROM parliament_current_members WHERE guild_id = ?;",
+            (int(guild_id),),
+        )
+        if rows:
+            updated_at = await self.now_iso()
+            payload = [
+                (
+                    int(guild_id),
+                    str(row.get("section_key") or "").strip(),
+                    str(row.get("section_label") or "").strip(),
+                    int(row.get("section_order") or 0),
+                    int(row.get("slot_order") or 0),
+                    int(row.get("user_id") or 0),
+                    str(row.get("display_name") or "").strip() or f"User {int(row.get('user_id') or 0)}",
+                    str(row.get("username") or "").strip() or None,
+                    str(row.get("display_handle") or "").strip() or None,
+                    str(row.get("avatar_url") or "").strip() or None,
+                    int(row.get("party_id")) if row.get("party_id") else None,
+                    str(row.get("party_name") or "").strip() or None,
+                    str(row.get("party_slug") or "").strip() or None,
+                    str(row.get("party_logo_url") or "").strip() or None,
+                    str(row.get("party_role") or "").strip() or None,
+                    int(row.get("elected_count") or 0),
+                    int(row.get("candidated_count") or 0),
+                    str(updated_at),
+                )
+                for row in rows
+                if int(row.get("user_id") or 0) > 0 and str(row.get("section_key") or "").strip()
+            ]
+            if payload:
+                await self._conn.executemany(
+                    """
+                    INSERT INTO parliament_current_members (
+                        guild_id, section_key, section_label, section_order, slot_order, user_id,
+                        display_name, username, display_handle, avatar_url,
+                        party_id, party_name, party_slug, party_logo_url, party_role,
+                        elected_count, candidated_count, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    payload,
+                )
+        await self._conn.commit()
+
+    async def list_parliament_current_members(self, guild_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                guild_id,
+                section_key,
+                section_label,
+                section_order,
+                slot_order,
+                user_id,
+                display_name,
+                username,
+                display_handle,
+                avatar_url,
+                party_id,
+                party_name,
+                party_slug,
+                party_logo_url,
+                party_role,
+                elected_count,
+                candidated_count,
+                updated_at
+            FROM parliament_current_members
+            WHERE guild_id = ?
+            ORDER BY section_order ASC, slot_order ASC, user_id ASC;
+            """,
+            (int(guild_id),),
         )
         return await cur.fetchall()
 
