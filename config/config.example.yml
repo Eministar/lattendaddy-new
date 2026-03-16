@@ -276,7 +276,6 @@ emoji_quiz:
   enabled: true
   review_forum_channel_id: 0
   round_timeout_seconds: 240
-  auto_interval_seconds: 240
   reveal_hints: true
   first_hint_after_seconds: 90
   second_hint_after_seconds: 170

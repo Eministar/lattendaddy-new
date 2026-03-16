@@ -41,14 +41,13 @@ def build_dashboard_view(
     desc = (
         f"{arrow2} Wähle eine Kategorie im Dropdown oder starte eine Zufallsrunde.\n"
         f"{arrow2} Die erste richtige Antwort gewinnt Punkte, Streak und Platz im Leaderboard.\n"
-        f"{arrow2} Auto-Quiz kann regelmäßig neue Emoji-Rätsel im Ziel-Thread posten.\n\n"
+        f"{arrow2} Antworten werden geprüft und nach kurzer Zeit wieder aus dem Channel entfernt.\n\n"
         f"┏`📍` - Ziel: {stats.get('target', 'Nicht gesetzt')}\n"
         f"┣`🧩` - Kategorien: **{int(stats.get('categories', 0))}** aktiv\n"
         f"┣`👥` - Spieler: **{int(stats.get('players', 0))}**\n"
         f"┣`🎮` - Runden: **{int(stats.get('rounds', 0))}**\n"
         f"┣`👑` - Champion: {stats.get('champion', 'Noch kein Champion')}\n"
-        f"┣`⚙️` - Auto: **{stats.get('auto_status', 'Aus')}**\n"
-        f"┣`📥` - Community: Eigene Rätsel, User-Profile + Kategorien einreichen\n"
+        f"┣`📥` - Community: Eigene Rätsel und User-Profile einreichen\n"
         f"┗`🧵` - Aktiv: {stats.get('active_state', 'Keine Runde aktiv')}"
     )
     container = discord.ui.Container(accent_colour=_color(settings, guild))

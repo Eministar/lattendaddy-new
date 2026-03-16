@@ -722,7 +722,6 @@ class EmojiQuizService:
             "players": await self.db.count_emoji_quiz_players(guild.id),
             "rounds": int(state["rounds_total"]),
             "champion": champion,
-            "auto_status": f"{'An' if state['auto_enabled'] else 'Aus'} ({int(state['auto_interval_seconds'])}s)",
             "active_state": active_state,
         }
 
@@ -758,10 +757,7 @@ class EmojiQuizService:
         state["target_thread_id"] = thread_id
         if timeout_seconds is not None:
             state["round_timeout_seconds"] = max(20, int(timeout_seconds))
-        if auto_interval_seconds is not None:
-            state["auto_interval_seconds"] = max(30, int(auto_interval_seconds))
-        if auto_enabled is not None:
-            state["auto_enabled"] = bool(auto_enabled)
+        state["auto_enabled"] = False
         if enabled_categories is not None:
             cleaned = await self._clean_category_inputs(guild.id, enabled_categories)
             if cleaned:
@@ -769,8 +765,7 @@ class EmojiQuizService:
         await self._save_guild_state(state)
         if review_forum is not None:
             await self.configure_review_forum(guild, review_forum)
-        if state["auto_enabled"]:
-            self._next_auto_at[guild.id] = datetime.now(timezone.utc) + timedelta(seconds=int(state["auto_interval_seconds"]))
+        self._next_auto_at.pop(guild.id, None)
         await self.ensure_panel(guild, target)
 
     async def set_auto(self, guild_id: int, enabled: bool, interval_seconds: int | None = None):
@@ -833,14 +828,11 @@ class EmojiQuizService:
             EmojiQuizCategorySelect(category_options=options, disabled=not options),
             [
                 EmojiQuizButton("random"),
-                EmojiQuizButton("stop"),
                 EmojiQuizButton("leaderboard_weekly"),
                 EmojiQuizButton("leaderboard_monthly"),
                 EmojiQuizButton("streaks"),
                 EmojiQuizButton("stats"),
-                EmojiQuizButton("auto"),
                 EmojiQuizButton("submit_question"),
-                EmojiQuizButton("submit_category"),
                 EmojiQuizButton("submit_user"),
             ],
         )
@@ -1076,6 +1068,13 @@ class EmojiQuizService:
         self._next_auto_at[guild.id] = datetime.now(timezone.utc) + timedelta(seconds=int(state["auto_interval_seconds"]))
         await self.refresh_dashboard(guild)
 
+    async def _cleanup_answer_message(self, message: discord.Message):
+        try:
+            await asyncio.sleep(10)
+            await message.delete()
+        except Exception:
+            pass
+
     async def handle_message(self, message: discord.Message):
         if not message.guild or not isinstance(message.author, discord.Member) or message.author.bot:
             return
@@ -1097,7 +1096,13 @@ class EmojiQuizService:
         await self._save_player_stats(message.guild.id, message.author.id, stats)
         round_.attempts += 1
         normalized = self._normalize(content)
-        if normalized not in round_.aliases:
+        is_correct = normalized in round_.aliases
+        try:
+            await message.add_reaction("✅" if is_correct else "❌")
+        except Exception:
+            pass
+        asyncio.create_task(self._cleanup_answer_message(message))
+        if not is_correct:
             return
         claimed = await self._claim_round(message.guild.id, round_)
         if claimed:
@@ -1134,24 +1139,6 @@ class EmojiQuizService:
             return False, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt."
         target = interaction.channel if isinstance(interaction.channel, (discord.TextChannel, discord.Thread)) else None
         return await self.start_round(interaction.guild, actor=interaction.user, target_override=target)
-
-    async def panel_stop(self, interaction: discord.Interaction) -> tuple[bool, str]:
-        if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            return False, "Nur im Server nutzbar."
-        if not await self.can_manage(interaction.user, "emoji_quiz_stop"):
-            return False, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt."
-        return await self.stop_round(interaction.guild, actor=interaction.user)
-
-    async def panel_toggle_auto(self, interaction: discord.Interaction) -> tuple[bool, str]:
-        if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            return False, "Nur im Server nutzbar."
-        if not await self.can_manage(interaction.user, "emoji_quiz_auto"):
-            return False, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt."
-        state = await self._guild_state(interaction.guild.id)
-        enabled = not bool(state["auto_enabled"])
-        await self.set_auto(interaction.guild.id, enabled)
-        await self.refresh_dashboard(interaction.guild)
-        return True, f"Auto-Quiz ist jetzt **{'an' if enabled else 'aus'}**."
 
     async def open_question_submit_modal(self, interaction: discord.Interaction):
         if not interaction.guild:
@@ -1412,16 +1399,4 @@ class EmojiQuizService:
         return "\n".join(lines) if lines else "Keine Kategorien aktiv."
 
     async def tick(self):
-        now = datetime.now(timezone.utc)
-        for guild in list(self.bot.guilds):
-            if not self._enabled(guild.id) or guild.id in self._rounds:
-                continue
-            state = await self._guild_state(guild.id)
-            if not bool(state["auto_enabled"]) or not int(state["target_channel_id"] or 0):
-                continue
-            due = self._next_auto_at.get(guild.id)
-            if due is None:
-                self._next_auto_at[guild.id] = now + timedelta(seconds=int(state["auto_interval_seconds"]))
-                continue
-            if due <= now:
-                await self.start_round(guild, actor=None, auto_started=True)
+        return

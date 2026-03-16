@@ -60,8 +60,6 @@ class EmojiQuizCommands(commands.Cog):
         thread="Thread (optional)",
         review_forum="Forum-Channel für Einsendungen",
         timeout_seconds="Rundenlänge in Sekunden",
-        auto_enabled="Auto-Quiz direkt aktivieren",
-        auto_interval_seconds="Abstand zwischen Auto-Runden",
         categories="Komma-Liste, z. B. filme,serien,städte,user",
     )
     async def setup(
@@ -71,8 +69,6 @@ class EmojiQuizCommands(commands.Cog):
         thread: discord.Thread | None = None,
         review_forum: discord.ForumChannel | None = None,
         timeout_seconds: int = 240,
-        auto_enabled: bool = False,
-        auto_interval_seconds: int = 240,
         categories: str | None = None,
     ):
         if not self._need_member(interaction):
@@ -94,8 +90,6 @@ class EmojiQuizCommands(commands.Cog):
             interaction.guild,
             target,
             timeout_seconds=int(timeout_seconds),
-            auto_interval_seconds=int(auto_interval_seconds),
-            auto_enabled=bool(auto_enabled),
             enabled_categories=resolved_categories,
             review_forum=review_forum,
         )
@@ -148,27 +142,6 @@ class EmojiQuizCommands(commands.Cog):
             app_commands.Choice(name=self._truncate_choice(label), value=value)
             for value, label in await self.service.autocomplete_category_choices(interaction.guild.id, current, enabled_only=True)
         ]
-
-    @emojiquiz.command(name="stop", description="⏹️ 𑁉 Laufendes Emoji-Rätsel beenden")
-    @app_commands.describe(reason="Optionaler Grund")
-    async def stop(self, interaction: discord.Interaction, reason: str | None = None):
-        if not self._need_member(interaction):
-            return
-        if not await self.service.can_manage(interaction.user, "emoji_quiz_stop"):
-            return await _ephemeral(interaction, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt.")
-        ok, msg = await self.service.stop_round(interaction.guild, actor=interaction.user, reason=str(reason or "Manuell gestoppt"))
-        await _ephemeral(interaction, msg)
-
-    @emojiquiz.command(name="auto", description="🤖 𑁉 Auto-Quiz ein- oder ausschalten")
-    @app_commands.describe(enabled="Auto-Quiz aktivieren?", interval_seconds="Abstand zwischen Auto-Runden")
-    async def auto(self, interaction: discord.Interaction, enabled: bool, interval_seconds: int | None = None):
-        if not self._need_member(interaction):
-            return
-        if not await self.service.can_manage(interaction.user, "emoji_quiz_auto"):
-            return await _ephemeral(interaction, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt.")
-        await self.service.set_auto(interaction.guild.id, bool(enabled), interval_seconds=interval_seconds)
-        await self.service.refresh_dashboard(interaction.guild)
-        await _ephemeral(interaction, f"Auto-Quiz ist jetzt **{'an' if enabled else 'aus'}**.")
 
     @emojiquiz.command(name="categories", description="🗂️ 𑁉 Aktive Kategorien anzeigen oder setzen")
     @app_commands.describe(setzen="Optional neue Komma-Liste, z. B. filme,serien,städte,user")

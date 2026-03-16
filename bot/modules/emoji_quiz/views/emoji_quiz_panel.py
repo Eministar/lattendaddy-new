@@ -54,14 +54,11 @@ class EmojiQuizButton(discord.ui.Button):
     def __init__(self, action: str):
         labels = {
             "random": ("Zufall", "🎲", discord.ButtonStyle.success),
-            "stop": ("Stop", "⏹️", discord.ButtonStyle.danger),
             "leaderboard_weekly": ("Woche", "🏆", discord.ButtonStyle.secondary),
             "leaderboard_monthly": ("Monat", "🥇", discord.ButtonStyle.secondary),
             "streaks": ("Streaks", "🔥", discord.ButtonStyle.secondary),
             "stats": ("Stats", "📊", discord.ButtonStyle.secondary),
-            "auto": ("Auto", "⚙️", discord.ButtonStyle.primary),
             "submit_question": ("Frage", "📥", discord.ButtonStyle.primary),
-            "submit_category": ("Kategorie", "🗂️", discord.ButtonStyle.secondary),
             "submit_user": ("User", "👤", discord.ButtonStyle.secondary),
         }
         label, emoji, style = labels.get(action, ("Aktion", "🧩", discord.ButtonStyle.secondary))
@@ -76,9 +73,6 @@ class EmojiQuizButton(discord.ui.Button):
         action = str(self.custom_id).split(":")[-1]
         if action == "random":
             ok, msg = await service.panel_start_random(interaction)
-            return await _send_ephemeral(interaction, msg)
-        if action == "stop":
-            ok, msg = await service.panel_stop(interaction)
             return await _send_ephemeral(interaction, msg)
         if action == "leaderboard_weekly":
             week_key, _ = service.current_period_keys()
@@ -97,13 +91,8 @@ class EmojiQuizButton(discord.ui.Button):
         if action == "stats":
             text = await service.stats_summary_text(interaction.guild.id, int(interaction.user.id), interaction.guild)
             return await _send_ephemeral(interaction, text)
-        if action == "auto":
-            ok, msg = await service.panel_toggle_auto(interaction)
-            return await _send_ephemeral(interaction, msg)
         if action == "submit_question":
             return await service.open_question_submit_modal(interaction)
-        if action == "submit_category":
-            return await service.open_category_submit_modal(interaction)
         if action == "submit_user":
             return await service.open_user_submit_modal(interaction)
         return await _send_ephemeral(interaction, "Unbekannte Aktion.")
@@ -114,12 +103,9 @@ class EmojiQuizPanelView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(EmojiQuizCategorySelect())
         self.add_item(EmojiQuizButton("random"))
-        self.add_item(EmojiQuizButton("stop"))
         self.add_item(EmojiQuizButton("leaderboard_weekly"))
         self.add_item(EmojiQuizButton("leaderboard_monthly"))
         self.add_item(EmojiQuizButton("streaks"))
         self.add_item(EmojiQuizButton("stats"))
-        self.add_item(EmojiQuizButton("auto"))
         self.add_item(EmojiQuizButton("submit_question"))
-        self.add_item(EmojiQuizButton("submit_category"))
         self.add_item(EmojiQuizButton("submit_user"))
