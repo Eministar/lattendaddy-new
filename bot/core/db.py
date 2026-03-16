@@ -1163,14 +1163,14 @@ class Database:
             WHERE message_count > 0
             ON CONFLICT(guild_id, user_id, month_key) DO UPDATE SET
                 message_count = CASE
-                    WHEN excluded.message_count > message_count THEN excluded.message_count
-                    ELSE message_count
+                    WHEN excluded.message_count > user_stats_monthly.message_count THEN excluded.message_count
+                    ELSE user_stats_monthly.message_count
                 END,
                 last_message_at = CASE
-                    WHEN last_message_at IS NULL THEN excluded.last_message_at
-                    WHEN excluded.last_message_at IS NULL THEN last_message_at
-                    WHEN excluded.last_message_at > last_message_at THEN excluded.last_message_at
-                    ELSE last_message_at
+                    WHEN user_stats_monthly.last_message_at IS NULL THEN excluded.last_message_at
+                    WHEN excluded.last_message_at IS NULL THEN user_stats_monthly.last_message_at
+                    WHEN excluded.last_message_at > user_stats_monthly.last_message_at THEN excluded.last_message_at
+                    ELSE user_stats_monthly.last_message_at
                 END;
             """,
             (str(month_key),),
