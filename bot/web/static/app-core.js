@@ -918,15 +918,14 @@ window.loadLiveUsers = async function loadLiveUsers() {
   });
 };
 
-window.loadBirthdays = async function loadBirthdays() {
-  const data = await api("/api/global/birthdays?limit=50&offset=0");
+window.renderBirthdayAllBirthdays = function renderBirthdayAllBirthdays(items) {
   const root = $("birthdays");
   root.innerHTML = "";
-  if (!(data.items || []).length) {
+  if (!(items || []).length) {
     root.innerHTML = '<div class="list-item">Keine Geburtstage.</div>';
     return;
   }
-  data.items.forEach((row) => {
+  items.forEach((row) => {
     const div = createElement("div", "list-item entity-card");
     const label = row.display_name || row.username || memberLabel(row.user_id);
     div.innerHTML = `
@@ -940,6 +939,12 @@ window.loadBirthdays = async function loadBirthdays() {
     `;
     root.appendChild(div);
   });
+};
+
+window.loadBirthdays = async function loadBirthdays() {
+  const gid = requireGuild();
+  const data = await api(`/api/guilds/${gid}/birthdays/summary`);
+  renderBirthdayAllBirthdays(data.all_birthdays || []);
 };
 
 window.loadBirthdaySummary = async function loadBirthdaySummary() {
@@ -970,6 +975,7 @@ window.loadBirthdaySummary = async function loadBirthdaySummary() {
   renderList("birthdaysToday", data.today || [], (row) => `<strong>${escapeHtml(row.display_name)}</strong><div class="list-meta">${escapeHtml(row.age ? `wird ${row.age}` : "Alter unbekannt")}</div>`, "Heute hat niemand Geburtstag.");
   renderList("birthdaysNext", data.next || [], (row) => `<strong>${escapeHtml(row.display_name)}</strong><div class="list-meta">${escapeHtml(`${row.day}.${row.month} · in ${row.days_until} Tagen${row.turns ? ` · wird ${row.turns}` : ""}`)}</div>`, "Keine anstehenden Termine.");
   renderList("boosters", data.boosters || [], (row) => `<strong>${escapeHtml(row.display_name)}</strong><div class="list-meta">Booster seit ${escapeHtml(formatDate(row.premium_since))}</div>`, "Keine Booster gespeichert.");
+  renderBirthdayAllBirthdays(data.all_birthdays || []);
 };
 
 window.refreshGuildData = async function refreshGuildData() {

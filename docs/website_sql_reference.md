@@ -11,6 +11,8 @@ Hinweise:
 
 Der Bot schreibt pro Nachricht zusätzlich in `user_stats_monthly`. Damit kann die Website den aktivsten User pro Kalendermonat direkt aus SQL holen.
 
+Zusätzlich wird beim ersten Start nach diesem Schema-Upgrade einmalig der vorhandene Gesamtstand aus `user_stats` in den aktuellen Monat übernommen, damit die Karte nicht bei `0` startet.
+
 ```sql
 SELECT
   user_id,

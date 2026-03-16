@@ -125,6 +125,7 @@ class Database:
             except Exception:
                 pass
         await self._create_tables()
+        await self._ensure_user_stats_monthly_legacy_seed()
         if self._driver == "mysql":
             try:
                 await self._conn.execute("SET SESSION sql_notes = 1")
@@ -524,6 +525,13 @@ class Database:
             message_count INTEGER NOT NULL DEFAULT 0,
             last_message_at TEXT,
             PRIMARY KEY (guild_id, user_id, month_key)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_stats_monthly_bootstrap (
+            bootstrap_key VARCHAR(64) NOT NULL,
+            completed_at TEXT NOT NULL,
+            PRIMARY KEY (bootstrap_key)
         );
         """)
         await self._conn.execute("""
@@ -1129,6 +1137,51 @@ class Database:
 
     async def now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
+
+    async def _ensure_user_stats_monthly_legacy_seed(self):
+        bootstrap_key = "legacy_totals_seed_v1"
+        cur = await self._conn.execute(
+            """
+            SELECT bootstrap_key
+            FROM user_stats_monthly_bootstrap
+            WHERE bootstrap_key = ?
+            LIMIT 1;
+            """,
+            (bootstrap_key,),
+        )
+        row = await cur.fetchone()
+        if row:
+            return
+
+        month_key = datetime.now(timezone.utc).strftime("%Y-%m")
+        now = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT INTO user_stats_monthly (guild_id, user_id, month_key, message_count, last_message_at)
+            SELECT guild_id, user_id, ?, message_count, last_message_at
+            FROM user_stats
+            WHERE message_count > 0
+            ON CONFLICT(guild_id, user_id, month_key) DO UPDATE SET
+                message_count = CASE
+                    WHEN excluded.message_count > message_count THEN excluded.message_count
+                    ELSE message_count
+                END,
+                last_message_at = CASE
+                    WHEN last_message_at IS NULL THEN excluded.last_message_at
+                    WHEN excluded.last_message_at IS NULL THEN last_message_at
+                    WHEN excluded.last_message_at > last_message_at THEN excluded.last_message_at
+                    ELSE last_message_at
+                END;
+            """,
+            (str(month_key),),
+        )
+        await self._conn.execute(
+            """
+            INSERT OR IGNORE INTO user_stats_monthly_bootstrap (bootstrap_key, completed_at)
+            VALUES (?, ?);
+            """,
+            (str(bootstrap_key), str(now)),
+        )
 
     async def create_ticket(self, guild_id: int, user_id: int, forum_channel_id: int, thread_id: int, summary_message_id: int, category_key: str):
         created_at = await self.now_iso()

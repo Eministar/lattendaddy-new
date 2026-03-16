@@ -62,8 +62,46 @@ class BirthdayService:
             candidate = self._safe_date(today.year + 1, month, day)
         return candidate
 
-    def _collect_guild_birthdays(self, guild: discord.Guild, rows: list[tuple], now: datetime):
-        members = {m.id: m for m in guild.members}
+    def _member_avatar_url(self, member: discord.Member | None) -> str | None:
+        if not member:
+            return None
+        try:
+            return str(member.display_avatar.replace(size=128, format="webp").url)
+        except Exception:
+            try:
+                return str(member.display_avatar.url)
+            except Exception:
+                return None
+
+    async def _resolve_birthday_members(self, guild: discord.Guild, rows: list[tuple]) -> dict[int, discord.Member]:
+        members = {int(member.id): member for member in list(guild.members or [])}
+        missing_ids: list[int] = []
+        for row in rows or []:
+            try:
+                user_id = int(row[0])
+            except Exception:
+                continue
+            if user_id > 0 and user_id not in members:
+                missing_ids.append(user_id)
+
+        if missing_ids:
+            try:
+                async for member in guild.fetch_members(limit=None):
+                    members[int(member.id)] = member
+            except Exception:
+                for user_id in missing_ids:
+                    if user_id in members:
+                        continue
+                    try:
+                        member = await guild.fetch_member(int(user_id))
+                    except Exception:
+                        member = None
+                    if member:
+                        members[int(member.id)] = member
+        return members
+
+    async def _collect_guild_birthdays(self, guild: discord.Guild, rows: list[tuple], now: datetime):
+        members = await self._resolve_birthday_members(guild, rows)
         today_entries: list[dict] = []
         all_entries: list[dict] = []
         for row in rows:
@@ -396,7 +434,7 @@ class BirthdayService:
         now = datetime.now(self._tz(guild.id))
         today = now.date()
         rows = rows if rows is not None else await self.db.list_birthdays_global_all()
-        today_entries, all_entries = self._collect_guild_birthdays(guild, rows, now)
+        today_entries, all_entries = await self._collect_guild_birthdays(guild, rows, now)
         current_rows = [(e["user_id"], e["day"], e["month"], e["year"]) for e in today_entries]
         await self.db.replace_birthdays_current(guild.id, today.isoformat(), current_rows)
         await self._sync_today_birthday_role(guild, {int(e["user_id"]) for e in today_entries})
@@ -481,7 +519,7 @@ class BirthdayService:
     async def build_dashboard_payload(self, guild: discord.Guild):
         now = datetime.now(self._tz(guild.id))
         rows = await self.db.list_birthdays_global_all()
-        today_entries, all_entries = self._collect_guild_birthdays(guild, rows, now)
+        today_entries, all_entries = await self._collect_guild_birthdays(guild, rows, now)
         next_limit = int(self.settings.get_guild(guild.id, "birthday.next_limit", 6) or 6)
         next_entries = self._build_next_entries(all_entries, now.date(), next_limit)
 
@@ -493,6 +531,7 @@ class BirthdayService:
                 "user_id": uid,
                 "name": member.name if member else str(uid),
                 "display_name": member.display_name if member else str(uid),
+                "avatar_url": self._member_avatar_url(member),
                 "age": entry.get("age"),
             })
 
@@ -504,10 +543,34 @@ class BirthdayService:
                 "user_id": uid,
                 "name": member.name if member else str(uid),
                 "display_name": member.display_name if member else str(uid),
+                "avatar_url": self._member_avatar_url(member),
                 "day": int(entry.get("day") or 0),
                 "month": int(entry.get("month") or 0),
                 "days_until": int(entry.get("days_until") or 0),
                 "turns": entry.get("turns"),
+            })
+
+        all_out = []
+        all_sorted = sorted(
+            all_entries,
+            key=lambda entry: (
+                int(entry.get("month") or 0),
+                int(entry.get("day") or 0),
+                str(getattr(entry.get("member"), "display_name", "") or "").lower(),
+                int(entry.get("user_id") or 0),
+            ),
+        )
+        for entry in all_sorted:
+            member = entry.get("member")
+            uid = int(entry.get("user_id") or 0)
+            all_out.append({
+                "user_id": uid,
+                "name": member.name if member else str(uid),
+                "display_name": member.display_name if member else str(uid),
+                "avatar_url": self._member_avatar_url(member),
+                "day": int(entry.get("day") or 0),
+                "month": int(entry.get("month") or 0),
+                "year": int(entry.get("year") or 0),
             })
 
         booster_rows = await self.db.list_boosters_for_guild(guild.id, limit=200, offset=0)
@@ -529,6 +592,7 @@ class BirthdayService:
             "timezone": str(self.settings.get_guild(guild.id, "birthday.timezone", "UTC") or "UTC"),
             "today": today_out,
             "next": next_out,
+            "all_birthdays": all_out,
             "total_birthdays": int(len(all_entries)),
             "total_today": int(len(today_out)),
             "total_next": int(len(next_out)),
@@ -553,7 +617,7 @@ class BirthdayService:
     async def build_birthday_list_embed(self, guild: discord.Guild, page: int = 1, per_page: int = 10):
         rows = await self.db.list_birthdays_global_all()
         now = datetime.now(self._tz(guild.id))
-        _, all_entries = self._collect_guild_birthdays(guild, rows, now)
+        _, all_entries = await self._collect_guild_birthdays(guild, rows, now)
         all_entries = sorted(
             all_entries,
             key=lambda e: (int(e.get("month") or 0), int(e.get("day") or 0), int(e.get("user_id") or 0)),

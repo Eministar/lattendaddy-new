@@ -3,8 +3,7 @@ Array.from(document.querySelectorAll(".nav-btn")).forEach((btn) => {
     const view = btn.dataset.view;
     setView(view);
     if (view === "birthdays") {
-      loadBirthdays().catch((err) => toast(err.message));
-      loadBirthdaySummary().catch(() => null);
+      loadBirthdaySummary().catch((err) => toast(err.message));
     }
     if (view === "logs") loadLogs().catch((err) => toast(err.message));
     if (view === "settings" && state.moduleKey) renderModuleEditor();
@@ -140,9 +139,8 @@ $("moduleReload").onclick = async () => {
   }
 };
 
-$("birthdaysReload").onclick = () => Promise.all([
-  loadBirthdays(),
-  loadBirthdaySummary().catch(() => null),
-]).then(() => toast("Birthdays geladen")).catch((err) => toast(err.message));
+$("birthdaysReload").onclick = () => loadBirthdaySummary()
+  .then(() => toast("Birthdays geladen"))
+  .catch((err) => toast(err.message));
 
 initDashboard();
