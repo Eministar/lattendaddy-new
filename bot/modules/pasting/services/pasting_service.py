@@ -488,8 +488,26 @@ class PastingService:
         return title[:79].rstrip() + "…"
 
     def _message_title(self, message: discord.Message, analysis: ContentAnalysis) -> str:
-        ext = self._extension_for_candidate(analysis)
-        return self._safe_title(f"message-{message.id}{ext}", fallback=f"message-{message.id}.txt")
+        language = str(analysis.language or "").strip().lower()
+        reason = str(analysis.reason or "").strip().lower()
+
+        if analysis.kind == "code":
+            if language:
+                base = f"{language}-code"
+            else:
+                base = "code-snippet"
+        elif analysis.kind == "log":
+            if "fehler" in reason:
+                base = "fehlerausgabe"
+            else:
+                base = "logausgabe"
+        else:
+            if language:
+                base = f"{language}-text"
+            else:
+                base = "textnachricht"
+
+        return self._safe_title(base, fallback="textnachricht")
 
     def _part_title(self, title: str, index: int, total: int) -> str:
         if total <= 1:
