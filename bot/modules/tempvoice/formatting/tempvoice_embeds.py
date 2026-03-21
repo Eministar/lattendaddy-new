@@ -68,7 +68,7 @@ def build_tempvoice_panel_container(
     limit = int(channel.user_limit or 0)
     bitrate = int(channel.bitrate or 0) // 1000
     status_lock = "Gesperrt" if locked else "Offen"
-    status_priv = "Privat" if private else "Oeffentlich"
+    status_priv = "Privat" if private else "Öffentlich"
 
     desc = (
         f"{arrow2} Hier steuerst du deinen Temp-Voice. Alle Änderungen gelten sofort.\n\n"
@@ -78,7 +78,7 @@ def build_tempvoice_panel_container(
         f"┣`👥` - Limit: **{limit if limit else 'Unbegrenzt'}**\n"
         f"┣`📡` - Region: **{region}**\n"
         f"┗`🎛️` - Bitrate: **{bitrate} kbps**\n\n"
-        "Nutze die Buttons und Menues unten, um User zu verwalten oder den Channel zu "
+        "Nutze die Buttons und Menüs unten, um User zu verwalten oder den Channel zu "
         "anpassen."
     )
     header = f"**{info} 𑁉 TEMP-VOICE PANEL**"

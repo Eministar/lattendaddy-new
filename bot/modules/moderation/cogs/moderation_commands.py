@@ -485,7 +485,7 @@ class ModerationCommands(commands.Cog):
             desc = (
                 f"Aktion: **{spec.label}** (`{spec.key}`)\n"
                 f"Command: {spec.description}\n"
-                f"Discord-Permission: `{native or 'keine zusaetzliche'}`\n"
+                f"Discord-Permission: `{native or 'keine zusätzliche'}`\n"
                 f"Modus: {mode}"
             )
             embed = self._build_embed(interaction.guild, interaction.user, "🛡️ 𑁉 BOT-PERMISSIONS", desc)

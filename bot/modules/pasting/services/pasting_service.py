@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -106,6 +107,20 @@ _CODE_PATTERNS = (
     re.compile(r"(?i)\b(select|insert|update|delete|from|where|join)\b"),
     re.compile(r"(?i)\b(<div|</div>|<span|</span>|<html|<!doctype html)\b"),
     re.compile(r"(?i)\b(package|namespace|using|fn|println!|impl)\b"),
+)
+_CODE_LINE_PATTERNS = (
+    re.compile(r"^\s*(from\s+\S+\s+import\s+\S+|import\s+\S+)\s*$"),
+    re.compile(r"^\s*(async\s+def|def|class)\s+\w+"),
+    re.compile(r"^\s*(if|elif|else|for|while|try|except|finally|with)\b.*:\s*$"),
+    re.compile(r"^\s*return\b"),
+    re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_]*\s*=\s*[^=].*$"),
+    re.compile(r"^\s*(const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*\s*="),
+    re.compile(r"^\s*function\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\("),
+    re.compile(r"^\s*(public|private|protected)\s+[\w<>\[\], ?]+\s+[A-Za-z_][A-Za-z0-9_]*\s*\("),
+    re.compile(r"^\s*(SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|ALTER|DROP)\b", re.IGNORECASE),
+    re.compile(r"^\s*</?[A-Za-z][A-Za-z0-9:-]*\b[^>]*>\s*$"),
+    re.compile(r"^\s*(FROM|RUN|CMD|ENTRYPOINT|COPY|ADD|WORKDIR|ENV|ARG|EXPOSE|USER)\b", re.IGNORECASE),
+    re.compile(r"^\s*[\[\{].*[\]\}]\s*,?\s*$"),
 )
 
 
@@ -256,6 +271,98 @@ class PastingService:
         suffix = str(Path(str(filename or "")).suffix or "").lower()
         return _EXTENSION_TO_LANGUAGE.get(suffix)
 
+    def _infer_language_from_content(self, text: str) -> str | None:
+        stripped = str(text or "").strip()
+        if not stripped:
+            return None
+
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, (dict, list)):
+                return "json"
+        except Exception:
+            pass
+
+        nonempty = [line.strip() for line in stripped.split("\n") if line.strip()]
+        if not nonempty:
+            return None
+
+        python_hits = sum(
+            1 for line in nonempty
+            if re.search(r"^(from\s+\S+\s+import\s+\S+|import\s+\S+|async\s+def\s+\w+|def\s+\w+|class\s+\w+|if\s+.+:\s*$|elif\s+.+:\s*$|for\s+.+:\s*$|while\s+.+:\s*$|return\b)", line)
+        )
+        if python_hits >= 2:
+            return "python"
+
+        ts_hits = sum(1 for line in nonempty if re.search(r"^(interface\s+\w+|type\s+\w+\s*=|enum\s+\w+|import\s+.+\s+from\s+['\"]|export\s+(class|function|const|type|interface)\b)", line))
+        if ts_hits >= 1 or re.search(r"\b[A-Za-z_][A-Za-z0-9_]*\s*:\s*(string|number|boolean|unknown|any|Record<|Promise<)", stripped):
+            return "typescript"
+
+        js_hits = sum(1 for line in nonempty if re.search(r"^(const|let|var|function)\b", line))
+        if js_hits >= 1 or "=>" in stripped or "console." in stripped:
+            return "javascript"
+
+        sql_hits = sum(1 for line in nonempty if re.search(r"^(SELECT|INSERT|UPDATE|DELETE|WITH|CREATE|ALTER|DROP)\b", line, re.IGNORECASE))
+        if sql_hits >= 1:
+            return "sql"
+
+        docker_hits = sum(1 for line in nonempty if re.search(r"^(FROM|RUN|CMD|ENTRYPOINT|COPY|ADD|WORKDIR|ENV|ARG|EXPOSE|USER)\b", line, re.IGNORECASE))
+        if docker_hits >= 2:
+            return "docker"
+
+        if stripped.startswith("#!/") or any(re.search(r"^(echo|cd|export|npm|pnpm|yarn|apt|sudo|cat|grep)\b", line) for line in nonempty):
+            return "bash"
+        if any(re.search(r"^(\$env:|Write-Host\b|Get-ChildItem\b|Where-Object\b)", line, re.IGNORECASE) for line in nonempty):
+            return "powershell"
+
+        html_hits = sum(1 for line in nonempty if re.search(r"^</?[A-Za-z][A-Za-z0-9:-]*\b[^>]*>$", line))
+        if html_hits >= 2 or "<!DOCTYPE html>" in stripped.upper():
+            return "html"
+
+        yaml_hits = sum(1 for line in nonempty if re.search(r"^[A-Za-z0-9_.\"'-]+\s*:\s*.+$", line))
+        if yaml_hits >= 2 and "{" not in stripped and "}" not in stripped:
+            return "yaml"
+
+        return None
+
+    def _code_reason(self, language: str | None) -> str:
+        if not language:
+            return "Code"
+        label = {
+            "python": "Python-Code",
+            "javascript": "JavaScript-Code",
+            "typescript": "TypeScript-Code",
+            "json": "JSON-Code",
+            "yaml": "YAML-Code",
+            "bash": "Shell-Code",
+            "powershell": "PowerShell-Code",
+            "sql": "SQL-Code",
+            "html": "HTML-Code",
+            "css": "CSS-Code",
+            "markdown": "Markdown-Code",
+            "xml": "XML-Code",
+            "diff": "Diff-Code",
+            "docker": "Docker-Code",
+        }.get(language)
+        return label or f"{language.title()}-Code"
+
+    def _count_code_like_lines(self, text: str) -> tuple[int, int]:
+        code_like = 0
+        indented = 0
+        for line in str(text or "").split("\n"):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            matched = any(pattern.search(line) for pattern in _CODE_LINE_PATTERNS)
+            if matched:
+                code_like += 1
+            if line.startswith(("    ", "\t")) and (
+                matched
+                or any(token in stripped for token in ("=", "(", ")", "[", "]", "{", "}", "return", "await", "yield"))
+            ):
+                indented += 1
+        return code_like, indented
+
     def _score_log(self, text: str, filename: str | None) -> int:
         score = 0
         suffix = str(Path(str(filename or "")).suffix or "").lower()
@@ -298,6 +405,17 @@ class PastingService:
             score += 2
         elif pattern_hits >= 1:
             score += 1
+        code_like_lines, indented_lines = self._count_code_like_lines(text)
+        if code_like_lines >= 4:
+            score += 4
+        elif code_like_lines >= 2:
+            score += 2
+        elif code_like_lines >= 1:
+            score += 1
+        if indented_lines >= 3:
+            score += 2
+        elif indented_lines >= 1:
+            score += 1
         if "{" in text and "}" in text and (";" in text or "=>" in text):
             score += 1
         return score
@@ -312,7 +430,7 @@ class PastingService:
         if stripped_block:
             upload_text = stripped_block
 
-        inferred_language = block_language or self._infer_language_from_filename(filename)
+        inferred_language = block_language or self._infer_language_from_filename(filename) or self._infer_language_from_content(upload_text)
         content_length = len(upload_text)
         line_count = len([line for line in upload_text.split("\n") if line.strip()]) or 1
         has_code_block = stripped_block is not None or "```" in normalized
@@ -329,15 +447,19 @@ class PastingService:
             return ContentAnalysis(upload_text, "Fehlerausgabe", "log", inferred_language)
         if log_score >= 2:
             return ContentAnalysis(upload_text, "Log", "log", inferred_language)
-        if code_score >= 3:
-            return ContentAnalysis(upload_text, "Code", "code", inferred_language)
+        if code_score >= 4:
+            return ContentAnalysis(upload_text, self._code_reason(inferred_language), "code", inferred_language)
+        if code_score >= 2 and line_count >= 3:
+            return ContentAnalysis(upload_text, self._code_reason(inferred_language), "code", inferred_language)
+        if code_score >= 1 and inferred_language and line_count >= 2:
+            return ContentAnalysis(upload_text, self._code_reason(inferred_language), "code", inferred_language)
         if error_score >= 2 and line_count >= 3:
             return ContentAnalysis(upload_text, "Fehlerausgabe", "log", inferred_language)
         if long_text:
             return ContentAnalysis(upload_text, "viel Text", "note", inferred_language)
         if force:
             if code_score >= 1:
-                return ContentAnalysis(upload_text, "Code-Datei", "code", inferred_language)
+                return ContentAnalysis(upload_text, self._code_reason(inferred_language), "code", inferred_language)
             if error_score >= 1:
                 return ContentAnalysis(upload_text, "Fehlerdatei", "log", inferred_language)
             if log_score >= 1:
