@@ -202,6 +202,15 @@ class PastingService:
         except Exception:
             return 2000000
 
+    def _ai_detection_enabled(self, guild_id: int) -> bool:
+        return bool(self.settings.get_guild_bool(guild_id, "pasting.ai_detection_enabled", True))
+
+    def _ai_detection_max_chars(self, guild_id: int) -> int:
+        try:
+            return max(800, int(self.settings.get_guild(guild_id, "pasting.ai_detection_max_chars", 2400) or 2400))
+        except Exception:
+            return 2400
+
     def _ids_from_setting(self, guild_id: int, key: str) -> set[int]:
         raw = self.settings.get_guild(guild_id, key, []) or []
         out: set[int] = set()
@@ -263,6 +272,160 @@ class PastingService:
         if not body.strip():
             return None, None
         return body, self._normalize_language(match.group("lang"))
+
+    def _deepseek_service(self, guild_id: int):
+        if not self._ai_detection_enabled(guild_id):
+            return None
+        if not self.settings.get_guild_bool(guild_id, "ai.enabled", True):
+            return None
+        service = getattr(self.bot, "deepseek_service", None)
+        if not service:
+            return None
+        try:
+            if not service._api_key(guild_id):
+                return None
+        except Exception:
+            return None
+        return service
+
+    def _classification_excerpt(self, guild_id: int, text: str) -> str:
+        value = str(text or "").strip()
+        limit = self._ai_detection_max_chars(guild_id)
+        if len(value) <= limit:
+            return value
+        head_limit = int(limit * 0.72)
+        tail_limit = max(180, limit - head_limit - 32)
+        head = value[:head_limit].rstrip()
+        tail = value[-tail_limit:].lstrip()
+        return f"{head}\n...[gekürzt]...\n{tail}"
+
+    def _ai_prompt(self, guild_id: int, text: str, *, filename: str | None = None, force: bool = False) -> list[dict]:
+        excerpt = self._classification_excerpt(guild_id, text)
+        line_count = len([line for line in str(text or "").split("\n") if line.strip()]) or 1
+        char_count = len(str(text or ""))
+        system_prompt = (
+            "Du klassifizierst Inhalte für einen Discord-Paste-Bot.\n"
+            "Antworte ausschließlich mit genau einem JSON-Objekt in einer Zeile und ohne Markdown.\n"
+            "Schema: "
+            "{\"action\":\"upload|ignore\",\"kind\":\"code|log|note\",\"language\":\"typescript|javascript|python|json|bash|powershell|sql|yaml|markdown|html|css|docker|diff|xml|text|null\",\"reason\":\"TypeScript-Code|JavaScript-Code|Python-Code|JSON-Code|Shell-Code|PowerShell-Code|SQL-Code|YAML-Code|Markdown-Code|HTML-Code|CSS-Code|Docker-Code|Diff-Code|XML-Code|Code|Log|Fehlerausgabe|viel Text|Text-Datei\",\"confidence\":0.0}\n"
+            "Regeln:\n"
+            "- Bevorzuge exakte Sprach-Erkennung. TypeScript und Python niemals verwechseln.\n"
+            "- code für echten Quellcode, Konfigurationscode, JSON, SQL, Shell, Dockerfile, Diff, HTML, CSS, XML, Markdown.\n"
+            "- log für Logs, Stacktraces, Exceptions, Crash-Reports und technische Fehlerausgaben.\n"
+            "- note nur für langen normalen Text.\n"
+            "- ignore für kurze normale Nachrichten ohne Paste-Bedarf.\n"
+            "- Wenn force_upload=true ist, darf action nicht ignore sein.\n"
+            "- language nur setzen, wenn du dir sicher bist, sonst null oder text."
+        )
+        user_prompt = (
+            f"force_upload={str(bool(force)).lower()}\n"
+            f"filename={str(filename or '').strip() or 'null'}\n"
+            f"char_count={char_count}\n"
+            f"line_count={line_count}\n"
+            "content:\n"
+            f"{excerpt}"
+        )
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    def _parse_ai_json(self, raw: str) -> dict | None:
+        text = str(raw or "").strip()
+        if not text:
+            return None
+        if text.startswith("```"):
+            text = re.sub(r"^```[a-zA-Z0-9_-]*\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+        try:
+            data = json.loads(text)
+            return data if isinstance(data, dict) else None
+        except Exception:
+            pass
+        match = re.search(r"\{[\s\S]*\}", text)
+        if not match:
+            return None
+        try:
+            data = json.loads(match.group(0))
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+
+    def _normalize_ai_analysis(
+        self,
+        content: str,
+        payload: dict | None,
+        *,
+        filename: str | None = None,
+        force: bool = False,
+    ) -> ContentAnalysis | None:
+        if not isinstance(payload, dict):
+            return None
+
+        action = str(payload.get("action") or "").strip().lower()
+        if action == "ignore" and not force:
+            return None
+
+        kind = str(payload.get("kind") or "").strip().lower()
+        if kind not in {"code", "log", "note"}:
+            if not force:
+                return None
+            kind = "note"
+
+        language = self._normalize_language(payload.get("language"))
+        if language in {"null", "none", "text"}:
+            language = None
+
+        raw_reason = str(payload.get("reason") or "").strip().lower()
+        if kind == "code":
+            reason = self._code_reason(language)
+        elif kind == "log":
+            reason = "Fehlerausgabe" if any(token in raw_reason for token in ("fehler", "error", "exception", "stack", "crash")) else "Log"
+        else:
+            reason = "Text-Datei" if force and filename else "viel Text"
+
+        return ContentAnalysis(content, reason, kind, language)
+
+    async def _analyze_text_with_ai(
+        self,
+        guild_id: int,
+        text: str,
+        *,
+        filename: str | None = None,
+        force: bool = False,
+    ) -> ContentAnalysis | None:
+        service = self._deepseek_service(guild_id)
+        if not service:
+            return None
+
+        normalized = self._normalize_text(text)
+        if not normalized.strip():
+            return None
+
+        upload_text = normalized
+        stripped_block, _ = self._strip_single_code_block(normalized)
+        if stripped_block:
+            upload_text = stripped_block
+
+        try:
+            reply, err = await service.complete(
+                guild_id,
+                self._ai_prompt(guild_id, upload_text, filename=filename, force=force),
+                temperature=0.1,
+                max_tokens=160,
+            )
+        except Exception:
+            return None
+
+        if err or not reply:
+            return None
+
+        return self._normalize_ai_analysis(
+            upload_text,
+            self._parse_ai_json(reply),
+            filename=filename,
+            force=force,
+        )
 
     def _infer_language_from_filename(self, filename: str | None) -> str | None:
         raw_name = str(filename or "").strip().lower()
@@ -586,7 +749,9 @@ class PastingService:
         }
 
     async def _message_candidate(self, message: discord.Message) -> PasteCandidate | None:
-        analysis = self._analyze_text(message.guild.id, message.content or "")
+        analysis = await self._analyze_text_with_ai(message.guild.id, message.content or "")
+        if not analysis:
+            analysis = self._analyze_text(message.guild.id, message.content or "")
         if not analysis:
             return None
         return PasteCandidate(
@@ -609,12 +774,20 @@ class PastingService:
             return None, f"{attachment.filename}: Dateianhang konnte nicht gelesen werden."
         if not raw:
             return None, None
-        analysis = self._analyze_text(
+        decoded = self._decode_attachment(raw)
+        analysis = await self._analyze_text_with_ai(
             message.guild.id,
-            self._decode_attachment(raw),
+            decoded,
             filename=attachment.filename,
             force=True,
         )
+        if not analysis:
+            analysis = self._analyze_text(
+            message.guild.id,
+            decoded,
+            filename=attachment.filename,
+            force=True,
+            )
         if not analysis:
             return None, None
         return (

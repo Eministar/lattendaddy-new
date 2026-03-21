@@ -237,6 +237,8 @@ pasting:
   enabled: true
   base_url: "http://localhost:3000"
   discord_integration_secret: ""
+  ai_detection_enabled: true
+  ai_detection_max_chars: 2400
   visibility: "unlisted"
   delete_original: true
   min_characters: 600

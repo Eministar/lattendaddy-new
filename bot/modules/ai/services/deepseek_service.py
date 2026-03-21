@@ -111,6 +111,16 @@ class DeepSeekService:
         return messages
 
     async def generate_reply(self, guild_id: int, messages: list[dict]) -> tuple[str | None, str | None]:
+        return await self.complete(guild_id, messages, temperature=0.8, max_tokens=220)
+
+    async def complete(
+        self,
+        guild_id: int,
+        messages: list[dict],
+        *,
+        temperature: float = 0.8,
+        max_tokens: int = 220,
+    ) -> tuple[str | None, str | None]:
         api_key = self._api_key(guild_id)
         if not api_key:
             return None, "API-Key fehlt"
@@ -121,8 +131,8 @@ class DeepSeekService:
         payload = {
             "model": model,
             "messages": messages,
-            "temperature": 0.8,
-            "max_tokens": 220,
+            "temperature": float(temperature),
+            "max_tokens": int(max_tokens),
         }
 
         headers = {
