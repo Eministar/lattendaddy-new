@@ -40,6 +40,7 @@ APP: dict[str, AppEmoji] = {
     "chat": AppEmoji("chat", 1459921474289930503, animated=True),
     "wait": AppEmoji("wait", 1461013582874411222, animated=True),
     "hacking": AppEmoji("hacking", 1461013894054285434, animated=True),
+    "loading": AppEmoji("loading", 1484715874437955687, animated=True),
 
 }
 

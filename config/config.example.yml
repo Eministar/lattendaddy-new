@@ -233,6 +233,18 @@ automod:
   enabled: true
   blacklist: []
 
+pasting:
+  enabled: true
+  base_url: "http://localhost:3000"
+  discord_integration_secret: ""
+  visibility: "unlisted"
+  delete_original: true
+  min_characters: 600
+  min_lines: 8
+  max_attachment_bytes: 2000000
+  ignored_channel_ids: []
+  ignored_category_ids: []
+
 
 news:
   enabled: true

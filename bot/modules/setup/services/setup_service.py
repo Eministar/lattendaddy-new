@@ -48,6 +48,7 @@ MODULE_META: dict[str, dict[str, Any]] = {
     "moderation": {"label": "Moderation", "emoji": "🔨", "aliases": ("mod", "permissions")},
     "news": {"label": "News", "emoji": "📰", "aliases": ("youtube",)},
     "parlament": {"label": "Parlament", "emoji": "🏛️", "aliases": ("parliament",)},
+    "pasting": {"label": "Pasting / StarPaste", "emoji": "📄", "aliases": ("paste", "starpaste", "pastes")},
     "placeholders": {"label": "Placeholders", "emoji": "🧩", "aliases": ("placeholder",)},
     "poll": {"label": "Polls", "emoji": "📊", "aliases": ("polls", "umfrage")},
     "reminder_afk": {"label": "Reminder / AFK", "emoji": "💤", "aliases": ("afk", "reminder")},
