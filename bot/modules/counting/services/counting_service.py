@@ -20,7 +20,7 @@ from bot.modules.counting.formatting.counting_embeds import (
 from bot.modules.logs.formatting.log_embeds import build_bot_debug_embed
 
 
-_ALLOWED_CHARS = re.compile(r"^[0-9A-Za-z_.,+\-*/%^=()\s]+$")
+_ALLOWED_CHARS = re.compile(r"^[0-9A-Za-z_.,+\-*/%^=()<>!\s]+$")
 _ALLOWED_FUNCS: dict[str, object] = {
     "abs": abs,
     "round": round,
@@ -45,6 +45,10 @@ _ALLOWED_CONSTS: dict[str, float] = {
     "e": math.e,
     "inf": math.inf,
 }
+_ALLOWED_IDENTIFIERS = frozenset(set(_ALLOWED_FUNCS) | set(_ALLOWED_CONSTS))
+_IDENTIFIER_RE = re.compile(r"(?<![\d.])[A-Za-z_][A-Za-z0-9_]*")
+_PLAIN_INT_RE = re.compile(r"^\s*\d+\s*$")
+_MAX_EXPRESSION_LENGTH = 160
 _BIN_OPS: dict[type[ast.AST], object] = {
     ast.Add: op.add,
     ast.Sub: op.sub,
@@ -298,24 +302,85 @@ class CountingService:
         expr = expr.translate(_UNICODE_OP_TRANSLATIONS)
         expr = re.sub(r"(?<=[\d\)])\s*[xX]\s*(?=[\d\(])", "*", expr)
         expr = re.sub(r"(?<=\))(?=[(0-9])", "*", expr)
-        expr = re.sub(r"(?<=\d)(?=\()", "*", expr)
         expr = re.sub(r"\s+", "", expr)
+        expr = re.sub(r"(?<![A-Za-z0-9_])(\d+)(?=\()", r"\1*", expr)
         expr = expr.replace("^", "**")
-        expr = re.sub(r"(?<=\d),(?=\d)", ".", expr)
+        expr = self._normalize_numeric_commas(expr)
         return expr
 
-    def _extract_single_int(self, content: str) -> int | None:
-        normalized = self._normalize_expression_input(content)
-        nums = re.findall(r"\d+", normalized)
-        if len(nums) != 1:
+    def _normalize_numeric_commas(self, expr: str) -> str:
+        if "," not in expr:
+            return expr
+
+        function_call_stack: list[bool] = []
+        out: list[str] = []
+        length = len(expr)
+
+        for index, ch in enumerate(expr):
+            if ch == "(":
+                prev_index = index - 1
+                while prev_index >= 0 and expr[prev_index].isspace():
+                    prev_index -= 1
+                function_call_stack.append(prev_index >= 0 and (expr[prev_index].isalnum() or expr[prev_index] == "_"))
+                out.append(ch)
+                continue
+
+            if ch == ")":
+                if function_call_stack:
+                    function_call_stack.pop()
+                out.append(ch)
+                continue
+
+            if ch == ",":
+                prev_ch = expr[index - 1] if index > 0 else ""
+                next_ch = expr[index + 1] if index + 1 < length else ""
+                inside_function_call = bool(function_call_stack and function_call_stack[-1])
+                if prev_ch.isdigit() and next_ch.isdigit() and not inside_function_call:
+                    out.append(".")
+                else:
+                    out.append(",")
+                continue
+
+            out.append(ch)
+
+        return "".join(out)
+
+    def _parse_plain_int(self, content: str) -> int | None:
+        stripped = str(content or "").strip()
+        if not stripped or not _PLAIN_INT_RE.fullmatch(stripped):
             return None
         try:
-            value = int(nums[0])
+            value = int(stripped)
+        except Exception:
+            return None
+        return value if value >= 0 else None
+
+    def _extract_single_int(self, content: str) -> int | None:
+        normalized = self._normalize_expression_input(content).strip()
+        if not normalized:
+            return None
+        previous = None
+        while normalized != previous and normalized.startswith("(") and normalized.endswith(")"):
+            previous = normalized
+            normalized = normalized[1:-1].strip()
+        if normalized.startswith("+"):
+            normalized = normalized[1:]
+        if not normalized or not normalized.isdecimal():
+            return None
+        try:
+            value = int(normalized)
         except Exception:
             return None
         if value < 0:
             return None
         return value
+
+    def _can_parse_expression(self, expr: str) -> bool:
+        if not expr or len(expr) > _MAX_EXPRESSION_LENGTH:
+            return False
+        if not _ALLOWED_CHARS.fullmatch(expr):
+            return False
+        return all(token in _ALLOWED_IDENTIFIERS for token in _IDENTIFIER_RE.findall(expr))
 
     def _eval_ast(self, node: ast.AST) -> int | None:
         if isinstance(node, ast.Expression):
@@ -400,6 +465,8 @@ class CountingService:
             values: list[int] = []
             for part in parts:
                 part = self._expand_aggregate_prefix(part)
+                if not self._can_parse_expression(part):
+                    return None
                 node = ast.parse(part, mode="eval")
                 value = self._eval_ast(node)
                 if value is None:
@@ -826,7 +893,9 @@ class CountingService:
             if action:
                 pass
             else:
-                value = self.evaluate_expression(content)
+                value = self._parse_plain_int(content)
+                if value is None:
+                    value = self.evaluate_expression(content)
                 if value is None:
                     value = self._extract_single_int(content)
 

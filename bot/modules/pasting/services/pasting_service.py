@@ -754,6 +754,8 @@ class PastingService:
             analysis = self._analyze_text(message.guild.id, message.content or "")
         if not analysis:
             return None
+        if analysis.kind == "note":
+            return None
         return PasteCandidate(
             title=self._message_title(message, analysis),
             content=analysis.content,
