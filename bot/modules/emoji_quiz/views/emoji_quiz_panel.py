@@ -5,11 +5,20 @@ import discord
 from bot.modules.emoji_quiz.data.question_bank import EMOJI_QUIZ_BANK, EMOJI_QUIZ_CATEGORY_ORDER
 from bot.modules.emoji_quiz.formatting.emoji_quiz_embeds import (
     build_leaderboard_embed,
+    build_notice_embed,
     build_streaks_embed,
 )
 
 
 async def _send_ephemeral(interaction: discord.Interaction, content: str | None = None, embed: discord.Embed | None = None):
+    if embed is None and content is not None:
+        settings = getattr(interaction.client, "settings", None)
+        if settings:
+            embed = build_notice_embed(settings, interaction.guild, content)
+            content = None
+        else:
+            embed = discord.Embed(title="ℹ️ 𑁉 EMOJI-QUIZ", description=content, color=0xB16B91)
+            content = None
     try:
         if not interaction.response.is_done():
             await interaction.response.send_message(content=content, embed=embed, ephemeral=True, delete_after=30)
@@ -46,7 +55,10 @@ class EmojiQuizCategorySelect(discord.ui.Select):
         service = getattr(interaction.client, "emoji_quiz_service", None)
         if not service:
             return await _send_ephemeral(interaction, "Emoji-Quiz-Service nicht verfügbar.")
+        await interaction.response.defer()
         ok, msg = await service.panel_start_category(interaction, str(self.values[0]))
+        if ok:
+            return
         return await _send_ephemeral(interaction, msg)
 
 
@@ -72,7 +84,10 @@ class EmojiQuizButton(discord.ui.Button):
             return await _send_ephemeral(interaction, "Emoji-Quiz-Service nicht verfügbar.")
         action = str(self.custom_id).split(":")[-1]
         if action == "random":
+            await interaction.response.defer()
             ok, msg = await service.panel_start_random(interaction)
+            if ok:
+                return
             return await _send_ephemeral(interaction, msg)
         if action == "leaderboard_weekly":
             week_key, _ = service.current_period_keys()
@@ -89,8 +104,8 @@ class EmojiQuizButton(discord.ui.Button):
             emb = build_streaks_embed(interaction.client.settings, interaction.guild, rows)
             return await _send_ephemeral(interaction, embed=emb)
         if action == "stats":
-            text = await service.stats_summary_text(interaction.guild.id, int(interaction.user.id), interaction.guild)
-            return await _send_ephemeral(interaction, text)
+            emb = await service.stats_summary_embed(interaction.guild.id, int(interaction.user.id), interaction.guild)
+            return await _send_ephemeral(interaction, embed=emb)
         if action == "submit_question":
             return await service.open_question_submit_modal(interaction)
         if action == "submit_user":

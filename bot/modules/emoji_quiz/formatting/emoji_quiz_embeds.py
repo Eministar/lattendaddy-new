@@ -21,7 +21,7 @@ def _color(settings, guild: discord.Guild | None) -> int:
 def _add_banner(container: discord.ui.Container):
     try:
         gallery = discord.ui.MediaGallery()
-        gallery.add_item(media=Banners.FLAGS)
+        gallery.add_item(media=Banners.EMOJIS)
         container.add_item(gallery)
         container.add_item(discord.ui.Separator())
     except Exception:
@@ -41,7 +41,7 @@ def build_dashboard_view(
     desc = (
         f"{arrow2} Wähle eine Kategorie im Dropdown oder starte eine Zufallsrunde.\n"
         f"{arrow2} Die erste richtige Antwort gewinnt Punkte, Streak und Platz im Leaderboard.\n"
-        f"{arrow2} Antworten werden geprüft und nach kurzer Zeit wieder aus dem Channel entfernt.\n\n"
+        f"{arrow2} Alle Quiz-Nachrichten außer dem Panel werden automatisch wieder gelöscht.\n\n"
         f"┏`📍` - Ziel: {stats.get('target', 'Nicht gesetzt')}\n"
         f"┣`🧩` - Kategorien: **{int(stats.get('categories', 0))}** aktiv\n"
         f"┣`👥` - Spieler: **{int(stats.get('players', 0))}**\n"
@@ -96,6 +96,25 @@ def build_round_embed(
     )
 
 
+def build_hint_embed(
+    settings,
+    guild: discord.Guild | None,
+    category_label: str,
+    masked_answer: str,
+    stage: int,
+) -> discord.Embed:
+    desc = (
+        f"┏`🗂️` - Kategorie: **{category_label}**\n"
+        f"┣`💡` - Hinweis: **#{int(stage)}**\n"
+        f"┗`🔎` - Muster: `{masked_answer}`"
+    )
+    return discord.Embed(
+        title="💡 𑁉 EMOJI-HINWEIS",
+        description=desc,
+        color=_color(settings, guild),
+    )
+
+
 def build_result_embed(
     settings,
     guild: discord.Guild | None,
@@ -139,6 +158,20 @@ def build_closed_embed(
     )
 
 
+def build_notice_embed(
+    settings,
+    guild: discord.Guild | None,
+    text: str,
+    *,
+    title: str = "ℹ️ 𑁉 EMOJI-QUIZ",
+) -> discord.Embed:
+    return discord.Embed(
+        title=title,
+        description=str(text or "").strip() or "—",
+        color=_color(settings, guild),
+    )
+
+
 def build_leaderboard_embed(settings, guild: discord.Guild, rows: list[tuple], title: str) -> discord.Embed:
     if not rows:
         return discord.Embed(title=title, description="Noch keine Einträge.", color=_color(settings, guild))
@@ -165,6 +198,28 @@ def build_streaks_embed(settings, guild: discord.Guild, rows: list[tuple]) -> di
         name = member.display_name if member else str(user_id)
         lines.append(f"`#{idx}` **{name}** — Streak **{current_streak}** (Best **{best_streak}**)")
     return discord.Embed(title="🔥 𑁉 EMOJI-STREAKS", description="\n".join(lines), color=_color(settings, guild))
+
+
+def build_stats_embed(
+    settings,
+    guild: discord.Guild | None,
+    user_id: int,
+    name: str,
+    stats: dict,
+) -> discord.Embed:
+    desc = (
+        f"┏`👤` - Spieler: <@{int(user_id)}> ({name})\n"
+        f"┣`💎` - Gesamt: **{int(stats['total_points'])}** Punkte\n"
+        f"┣`📅` - Woche: **{int(stats['weekly_points'])}** • Monat: **{int(stats['monthly_points'])}**\n"
+        f"┣`🎯` - Treffer: **{int(stats['correct'])}** • Versuche: **{int(stats['attempts'])}**\n"
+        f"┣`🚀` - Gestartet: **{int(stats['rounds_started'])}** • Geschlossen: **{int(stats['rounds_closed'])}**\n"
+        f"┗`🔥` - Streak: **{int(stats['current_streak'])}** (Best: **{int(stats['best_streak'])}**)"
+    )
+    return discord.Embed(
+        title="📊 𑁉 EMOJI-STATS",
+        description=desc,
+        color=_color(settings, guild),
+    )
 
 
 def _fmt_dt(value: str | None) -> str:

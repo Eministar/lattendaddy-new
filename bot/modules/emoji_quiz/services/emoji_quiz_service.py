@@ -19,19 +19,34 @@ from bot.modules.emoji_quiz.data.question_bank import (
 from bot.modules.emoji_quiz.formatting.emoji_quiz_embeds import (
     build_closed_embed,
     build_dashboard_view,
+    build_hint_embed,
+    build_notice_embed,
     build_result_embed,
     build_round_embed,
+    build_stats_embed,
     build_submission_view,
 )
 from bot.modules.moderation.services.permission_service import PermissionService
 
 
-async def _ephemeral(interaction: discord.Interaction, text: str):
+async def _ephemeral(
+    interaction: discord.Interaction,
+    text: str | None = None,
+    embed: discord.Embed | None = None,
+):
+    if embed is None and text is not None:
+        settings = getattr(interaction.client, "settings", None)
+        if settings:
+            embed = build_notice_embed(settings, interaction.guild, text)
+            text = None
+        else:
+            embed = discord.Embed(title="ℹ️ 𑁉 EMOJI-QUIZ", description=text, color=0xB16B91)
+            text = None
     try:
         if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True, delete_after=30)
+            await interaction.response.send_message(content=text, embed=embed, ephemeral=True, delete_after=30)
         else:
-            await interaction.followup.send(text, ephemeral=True, delete_after=30)
+            await interaction.followup.send(content=text, embed=embed, ephemeral=True, delete_after=30)
     except Exception:
         pass
 
@@ -162,6 +177,9 @@ class EmojiUserSubmitModal(discord.ui.Modal):
 
 
 class EmojiQuizService:
+    TRANSIENT_MESSAGE_DELETE_AFTER = 20
+    ANSWER_MESSAGE_DELETE_AFTER = 6
+
     def __init__(self, bot: discord.Client, settings, db, logger):
         self.bot = bot
         self.settings = settings
@@ -283,7 +301,14 @@ class EmojiQuizService:
                 return
             try:
                 await target.send(
-                    f"💡 Tipp {stage}: **{round_.category_label}** · `{self._masked_answer(round_.answer, stage)}`"
+                    embed=build_hint_embed(
+                        self.settings,
+                        guild,
+                        round_.category_label,
+                        self._masked_answer(round_.answer, stage),
+                        stage,
+                    ),
+                    delete_after=self.TRANSIENT_MESSAGE_DELETE_AFTER,
                 )
             except Exception:
                 return
@@ -1000,6 +1025,21 @@ class EmojiQuizService:
         except Exception:
             pass
 
+    async def _send_transient_embed(
+        self,
+        target: discord.TextChannel | discord.Thread,
+        embed: discord.Embed,
+        *,
+        delete_after: int | None = None,
+    ):
+        try:
+            await target.send(
+                embed=embed,
+                delete_after=int(delete_after or self.TRANSIENT_MESSAGE_DELETE_AFTER),
+            )
+        except Exception:
+            pass
+
     async def _close_without_winner(self, guild: discord.Guild, round_: ActiveEmojiRound, reason: str, closed_by: discord.Member | None = None):
         state = await self._guild_state(guild.id)
         await self._reset_previous_winner_streak_if_needed(guild.id, int(state.get("last_winner_id") or 0), None)
@@ -1012,7 +1052,10 @@ class EmojiQuizService:
             round_.hint_task.cancel()
         if isinstance(target, (discord.TextChannel, discord.Thread)):
             await self._delete_prompt(target, round_.prompt_message_id)
-            await target.send(embed=build_closed_embed(self.settings, guild, round_.answer, round_.category_label, reason))
+            await self._send_transient_embed(
+                target,
+                build_closed_embed(self.settings, guild, round_.answer, round_.category_label, reason),
+            )
         if closed_by:
             stats = await self._get_player_stats(guild.id, closed_by.id)
             stats["rounds_closed"] += 1
@@ -1053,8 +1096,9 @@ class EmojiQuizService:
             round_.hint_task.cancel()
         if isinstance(target, (discord.TextChannel, discord.Thread)):
             await self._delete_prompt(target, round_.prompt_message_id)
-            await target.send(
-                embed=build_result_embed(
+            await self._send_transient_embed(
+                target,
+                build_result_embed(
                     self.settings,
                     guild,
                     winner.id,
@@ -1063,14 +1107,14 @@ class EmojiQuizService:
                     gain,
                     int(stats["total_points"]),
                     int(stats["current_streak"]),
-                )
+                ),
             )
         self._next_auto_at[guild.id] = datetime.now(timezone.utc) + timedelta(seconds=int(state["auto_interval_seconds"]))
         await self.refresh_dashboard(guild)
 
     async def _cleanup_answer_message(self, message: discord.Message):
         try:
-            await asyncio.sleep(10)
+            await asyncio.sleep(self.ANSWER_MESSAGE_DELETE_AFTER)
             await message.delete()
         except Exception:
             pass
@@ -1111,17 +1155,16 @@ class EmojiQuizService:
     async def stats_for(self, guild_id: int, user_id: int) -> dict[str, Any]:
         return await self._get_player_stats(guild_id, user_id)
 
-    async def stats_summary_text(self, guild_id: int, user_id: int, guild: discord.Guild | None = None) -> str:
+    async def stats_summary_embed(self, guild_id: int, user_id: int, guild: discord.Guild | None = None) -> discord.Embed:
         stats = await self._get_player_stats(guild_id, user_id)
         member = guild.get_member(user_id) if guild else None
         name = member.display_name if member else str(user_id)
-        return (
-            f"**Stats von {name}**\n"
-            f"Punkte: **{int(stats['total_points'])}**\n"
-            f"Woche: **{int(stats['weekly_points'])}** • Monat: **{int(stats['monthly_points'])}**\n"
-            f"Treffer: **{int(stats['correct'])}** • Versuche: **{int(stats['attempts'])}**\n"
-            f"Gestartet: **{int(stats['rounds_started'])}** • Geschlossen: **{int(stats['rounds_closed'])}**\n"
-            f"Streak: **{int(stats['current_streak'])}** (Best: {int(stats['best_streak'])})"
+        return build_stats_embed(
+            self.settings,
+            guild,
+            int(user_id),
+            name,
+            stats,
         )
 
     async def panel_start_category(self, interaction: discord.Interaction, category_key: str) -> tuple[bool, str]:

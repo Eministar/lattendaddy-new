@@ -4,17 +4,29 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.modules.emoji_quiz.formatting.emoji_quiz_embeds import build_leaderboard_embed, build_streaks_embed
+from bot.modules.emoji_quiz.formatting.emoji_quiz_embeds import (
+    build_leaderboard_embed,
+    build_notice_embed,
+    build_streaks_embed,
+)
 from bot.modules.emoji_quiz.services.emoji_quiz_service import EmojiQuizService
 from bot.modules.moderation.services.permission_service import PermissionService
 
 
 async def _ephemeral(interaction: discord.Interaction, text: str | None = None, embed: discord.Embed | None = None):
+    if embed is None and text is not None:
+        settings = getattr(interaction.client, "settings", None)
+        if settings:
+            embed = build_notice_embed(settings, interaction.guild, text)
+            text = None
+        else:
+            embed = discord.Embed(title="ℹ️ 𑁉 EMOJI-QUIZ", description=text, color=0xB16B91)
+            text = None
     try:
         if not interaction.response.is_done():
-            await interaction.response.send_message(text, embed=embed, ephemeral=True, delete_after=30)
+            await interaction.response.send_message(content=text, embed=embed, ephemeral=True, delete_after=30)
         else:
-            await interaction.followup.send(text, embed=embed, ephemeral=True, delete_after=30)
+            await interaction.followup.send(content=text, embed=embed, ephemeral=True, delete_after=30)
     except Exception:
         pass
 
@@ -126,13 +138,26 @@ class EmojiQuizCommands(commands.Cog):
         if not await self.service.can_manage(interaction.user, "emoji_quiz_start"):
             return await _ephemeral(interaction, "Keine Rechte. Champion oder freigegebene Staff-Rolle benötigt.")
         target = self._resolve_target(interaction, None, None)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         ok, msg = await self.service.start_round(
             interaction.guild,
             actor=interaction.user,
             category_key=category,
             target_override=target,
         )
-        await _ephemeral(interaction, msg)
+        if ok:
+            try:
+                await interaction.delete_original_response()
+            except Exception:
+                pass
+            return
+        try:
+            await interaction.edit_original_response(
+                content=None,
+                embed=build_notice_embed(self.bot.settings, interaction.guild, msg),
+            )
+        except Exception:
+            await _ephemeral(interaction, msg)
 
     @start.autocomplete("category")
     async def start_category_autocomplete(self, interaction: discord.Interaction, current: str):
@@ -162,7 +187,15 @@ class EmojiQuizCommands(commands.Cog):
                 return await _ephemeral(interaction, "Keine gültigen Kategorien erkannt.")
             await self.service.set_categories(interaction.guild.id, categories)
             await self.service.refresh_dashboard(interaction.guild)
-        await _ephemeral(interaction, "**Aktive Kategorien**\n" + await self.service.categories_text(interaction.guild.id))
+        await _ephemeral(
+            interaction,
+            embed=build_notice_embed(
+                self.bot.settings,
+                interaction.guild,
+                await self.service.categories_text(interaction.guild.id),
+                title="🗂️ 𑁉 AKTIVE KATEGORIEN",
+            ),
+        )
 
     @emojiquiz.command(name="annehmen", description="✅ 𑁉 Emoji-Quiz-Einreichung annehmen")
     async def accept(self, interaction: discord.Interaction):
@@ -209,4 +242,4 @@ class EmojiQuizCommands(commands.Cog):
         if not interaction.guild or not interaction.user:
             return
         target = user or interaction.user
-        await _ephemeral(interaction, await self.service.stats_summary_text(interaction.guild.id, int(target.id), interaction.guild))
+        await _ephemeral(interaction, embed=await self.service.stats_summary_embed(interaction.guild.id, int(target.id), interaction.guild))
