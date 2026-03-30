@@ -998,7 +998,7 @@ class Database:
         """)
         if self._driver == "mysql":
             await self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_debate_topics_status ON debate_topics(guild_id, status(32), created_at)")
+                "CREATE INDEX IF NOT EXISTS idx_debate_topics_status ON debate_topics(guild_id, status(32), created_at(32))")
         else:
             await self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_debate_topics_status ON debate_topics(guild_id, status, created_at)")
@@ -1021,12 +1021,16 @@ class Database:
         """)
         if self._driver == "mysql":
             await self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_debate_events_status ON debate_events(guild_id, status(32), scheduled_for)")
+                "CREATE INDEX IF NOT EXISTS idx_debate_events_status ON debate_events(guild_id, status(32), scheduled_for(32))")
         else:
             await self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_debate_events_status ON debate_events(guild_id, status, scheduled_for)")
-        await self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_debate_events_schedule ON debate_events(guild_id, scheduled_for)")
+        if self._driver == "mysql":
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_debate_events_schedule ON debate_events(guild_id, scheduled_for(32))")
+        else:
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_debate_events_schedule ON debate_events(guild_id, scheduled_for)")
         await self._conn.execute("""
         CREATE TABLE IF NOT EXISTS debate_registrations (
             event_id INTEGER NOT NULL,
