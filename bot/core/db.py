@@ -970,6 +970,74 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_emoji_quiz_submissions_thread ON emoji_quiz_submissions(guild_id, thread_id)")
             await self._conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_emoji_quiz_submissions_status ON emoji_quiz_submissions(guild_id, status)")
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS debate_guilds (
+            guild_id INTEGER NOT NULL,
+            panel_channel_id INTEGER,
+            panel_message_id INTEGER,
+            review_channel_id INTEGER,
+            podium_channel_id INTEGER,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS debate_topics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            submitted_by INTEGER NOT NULL,
+            created_via VARCHAR(32) NOT NULL,
+            reviewed_by INTEGER,
+            reviewed_at TEXT,
+            review_note TEXT,
+            created_at TEXT NOT NULL
+        );
+        """)
+        if self._driver == "mysql":
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_debate_topics_status ON debate_topics(guild_id, status(32), created_at)")
+        else:
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_debate_topics_status ON debate_topics(guild_id, status, created_at)")
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS debate_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            topic_id INTEGER NOT NULL,
+            scheduled_for TEXT NOT NULL,
+            status VARCHAR(32) NOT NULL,
+            started_at TEXT,
+            ended_at TEXT,
+            duration_seconds INTEGER,
+            started_by INTEGER,
+            ended_by INTEGER,
+            podium_message_id INTEGER,
+            speaker_snapshot_json TEXT,
+            created_at TEXT NOT NULL
+        );
+        """)
+        if self._driver == "mysql":
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_debate_events_status ON debate_events(guild_id, status(32), scheduled_for)")
+        else:
+            await self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_debate_events_status ON debate_events(guild_id, status, scheduled_for)")
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_debate_events_schedule ON debate_events(guild_id, scheduled_for)")
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS debate_registrations (
+            event_id INTEGER NOT NULL,
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (event_id, user_id)
+        );
+        """)
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_debate_registrations_user ON debate_registrations(guild_id, user_id)")
 
     async def _ensure_user_stats_columns(self):
         await self._ensure_column("user_stats", "invite_count", "INTEGER NOT NULL DEFAULT 0")
@@ -4080,6 +4148,478 @@ class Database:
         )
         row = await cur.fetchone()
         return int(row[0] if row else 0)
+
+    async def get_debate_guild(self, guild_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT guild_id, panel_channel_id, panel_message_id, review_channel_id, podium_channel_id, updated_at
+            FROM debate_guilds
+            WHERE guild_id = ?
+            LIMIT 1;
+            """,
+            (int(guild_id),),
+        )
+        return await cur.fetchone()
+
+    async def upsert_debate_guild(
+        self,
+        guild_id: int,
+        panel_channel_id: int | None,
+        panel_message_id: int | None,
+        review_channel_id: int | None,
+        podium_channel_id: int | None,
+    ):
+        now = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT INTO debate_guilds (
+                guild_id,
+                panel_channel_id,
+                panel_message_id,
+                review_channel_id,
+                podium_channel_id,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET
+                panel_channel_id = excluded.panel_channel_id,
+                panel_message_id = excluded.panel_message_id,
+                review_channel_id = excluded.review_channel_id,
+                podium_channel_id = excluded.podium_channel_id,
+                updated_at = excluded.updated_at;
+            """,
+            (
+                int(guild_id),
+                int(panel_channel_id) if panel_channel_id else None,
+                int(panel_message_id) if panel_message_id else None,
+                int(review_channel_id) if review_channel_id else None,
+                int(podium_channel_id) if podium_channel_id else None,
+                now,
+            ),
+        )
+        await self._conn.commit()
+
+    async def create_debate_topic(
+        self,
+        guild_id: int,
+        title: str,
+        description: str,
+        submitted_by: int,
+        *,
+        status: str = "pending",
+        created_via: str = "panel",
+        reviewed_by: int | None = None,
+        review_note: str | None = None,
+    ) -> int:
+        created_at = await self.now_iso()
+        reviewed_at = created_at if str(status) != "pending" and reviewed_by else None
+        cur = await self._conn.execute(
+            """
+            INSERT INTO debate_topics (
+                guild_id,
+                title,
+                description,
+                status,
+                submitted_by,
+                created_via,
+                reviewed_by,
+                reviewed_at,
+                review_note,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                int(guild_id),
+                str(title),
+                str(description),
+                str(status),
+                int(submitted_by),
+                str(created_via),
+                int(reviewed_by) if reviewed_by else None,
+                reviewed_at,
+                str(review_note).strip() if review_note else None,
+                created_at,
+            ),
+        )
+        await self._conn.commit()
+        return int(getattr(cur, "lastrowid", 0) or 0)
+
+    async def get_debate_topic(self, topic_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                id,
+                guild_id,
+                title,
+                description,
+                status,
+                submitted_by,
+                created_via,
+                reviewed_by,
+                reviewed_at,
+                review_note,
+                created_at
+            FROM debate_topics
+            WHERE id = ?
+            LIMIT 1;
+            """,
+            (int(topic_id),),
+        )
+        return await cur.fetchone()
+
+    async def list_debate_topics(self, guild_id: int, status: str | None = None, limit: int = 50):
+        sql = """
+            SELECT
+                id,
+                guild_id,
+                title,
+                description,
+                status,
+                submitted_by,
+                created_via,
+                reviewed_by,
+                reviewed_at,
+                review_note,
+                created_at
+            FROM debate_topics
+            WHERE guild_id = ?
+        """
+        params: list[object] = [int(guild_id)]
+        if status:
+            sql += " AND status = ?"
+            params.append(str(status))
+        sql += " ORDER BY id DESC LIMIT ?;"
+        params.append(int(limit))
+        cur = await self._conn.execute(sql, tuple(params))
+        return await cur.fetchall()
+
+    async def count_debate_topics(self, guild_id: int, status: str | None = None) -> int:
+        sql = "SELECT COUNT(*) FROM debate_topics WHERE guild_id = ?"
+        params: list[object] = [int(guild_id)]
+        if status:
+            sql += " AND status = ?"
+            params.append(str(status))
+        sql += ";"
+        cur = await self._conn.execute(sql, tuple(params))
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def set_debate_topic_status(
+        self,
+        topic_id: int,
+        status: str,
+        reviewed_by: int | None = None,
+        review_note: str | None = None,
+    ):
+        reviewed_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            UPDATE debate_topics
+            SET status = ?, reviewed_by = ?, reviewed_at = ?, review_note = ?
+            WHERE id = ?;
+            """,
+            (
+                str(status),
+                int(reviewed_by) if reviewed_by else None,
+                reviewed_at if reviewed_by else None,
+                str(review_note).strip() if review_note else None,
+                int(topic_id),
+            ),
+        )
+        await self._conn.commit()
+
+    async def create_debate_event(self, guild_id: int, topic_id: int, scheduled_for: str) -> int:
+        created_at = await self.now_iso()
+        cur = await self._conn.execute(
+            """
+            INSERT INTO debate_events (
+                guild_id,
+                topic_id,
+                scheduled_for,
+                status,
+                started_at,
+                ended_at,
+                duration_seconds,
+                started_by,
+                ended_by,
+                podium_message_id,
+                speaker_snapshot_json,
+                created_at
+            )
+            VALUES (?, ?, ?, 'planned', NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?);
+            """,
+            (
+                int(guild_id),
+                int(topic_id),
+                str(scheduled_for),
+                created_at,
+            ),
+        )
+        await self._conn.commit()
+        return int(getattr(cur, "lastrowid", 0) or 0)
+
+    async def get_debate_event(self, event_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                e.id,
+                e.guild_id,
+                e.topic_id,
+                e.scheduled_for,
+                e.status,
+                e.started_at,
+                e.ended_at,
+                e.duration_seconds,
+                e.started_by,
+                e.ended_by,
+                e.podium_message_id,
+                e.speaker_snapshot_json,
+                e.created_at,
+                t.title,
+                t.description
+            FROM debate_events e
+            JOIN debate_topics t ON t.id = e.topic_id
+            WHERE e.id = ?
+            LIMIT 1;
+            """,
+            (int(event_id),),
+        )
+        return await cur.fetchone()
+
+    async def list_debate_events(self, guild_id: int, status: str | None = None, limit: int = 50):
+        sql = """
+            SELECT
+                e.id,
+                e.guild_id,
+                e.topic_id,
+                e.scheduled_for,
+                e.status,
+                e.started_at,
+                e.ended_at,
+                e.duration_seconds,
+                e.started_by,
+                e.ended_by,
+                e.podium_message_id,
+                e.speaker_snapshot_json,
+                e.created_at,
+                t.title,
+                t.description
+            FROM debate_events e
+            JOIN debate_topics t ON t.id = e.topic_id
+            WHERE e.guild_id = ?
+        """
+        params: list[object] = [int(guild_id)]
+        if status:
+            sql += " AND e.status = ?"
+            params.append(str(status))
+        sql += " ORDER BY e.scheduled_for ASC, e.id ASC LIMIT ?;"
+        params.append(int(limit))
+        cur = await self._conn.execute(sql, tuple(params))
+        return await cur.fetchall()
+
+    async def get_next_planned_debate_event(self, guild_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                e.id,
+                e.guild_id,
+                e.topic_id,
+                e.scheduled_for,
+                e.status,
+                e.started_at,
+                e.ended_at,
+                e.duration_seconds,
+                e.started_by,
+                e.ended_by,
+                e.podium_message_id,
+                e.speaker_snapshot_json,
+                e.created_at,
+                t.title,
+                t.description
+            FROM debate_events e
+            JOIN debate_topics t ON t.id = e.topic_id
+            WHERE e.guild_id = ? AND e.status = 'planned'
+            ORDER BY e.scheduled_for ASC, e.id ASC
+            LIMIT 1;
+            """,
+            (int(guild_id),),
+        )
+        return await cur.fetchone()
+
+    async def get_live_debate_event(self, guild_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                e.id,
+                e.guild_id,
+                e.topic_id,
+                e.scheduled_for,
+                e.status,
+                e.started_at,
+                e.ended_at,
+                e.duration_seconds,
+                e.started_by,
+                e.ended_by,
+                e.podium_message_id,
+                e.speaker_snapshot_json,
+                e.created_at,
+                t.title,
+                t.description
+            FROM debate_events e
+            JOIN debate_topics t ON t.id = e.topic_id
+            WHERE e.guild_id = ? AND e.status = 'live'
+            ORDER BY e.started_at DESC, e.id DESC
+            LIMIT 1;
+            """,
+            (int(guild_id),),
+        )
+        return await cur.fetchone()
+
+    async def count_debate_events(self, guild_id: int, status: str | None = None) -> int:
+        sql = "SELECT COUNT(*) FROM debate_events WHERE guild_id = ?"
+        params: list[object] = [int(guild_id)]
+        if status:
+            sql += " AND status = ?"
+            params.append(str(status))
+        sql += ";"
+        cur = await self._conn.execute(sql, tuple(params))
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def mark_debate_event_live(
+        self,
+        event_id: int,
+        started_by: int,
+        started_at: str,
+        podium_message_id: int | None,
+        speaker_snapshot_json: str | None,
+    ):
+        await self._conn.execute(
+            """
+            UPDATE debate_events
+            SET status = 'live',
+                started_at = ?,
+                started_by = ?,
+                podium_message_id = ?,
+                speaker_snapshot_json = ?
+            WHERE id = ?;
+            """,
+            (
+                str(started_at),
+                int(started_by),
+                int(podium_message_id) if podium_message_id else None,
+                str(speaker_snapshot_json) if speaker_snapshot_json is not None else None,
+                int(event_id),
+            ),
+        )
+        await self._conn.commit()
+
+    async def finish_debate_event(self, event_id: int, ended_by: int, ended_at: str, duration_seconds: int):
+        await self._conn.execute(
+            """
+            UPDATE debate_events
+            SET status = 'finished',
+                ended_at = ?,
+                ended_by = ?,
+                duration_seconds = ?
+            WHERE id = ?;
+            """,
+            (
+                str(ended_at),
+                int(ended_by),
+                int(duration_seconds),
+                int(event_id),
+            ),
+        )
+        await self._conn.commit()
+
+    async def get_debate_registration(self, event_id: int, user_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT event_id, guild_id, user_id, created_at
+            FROM debate_registrations
+            WHERE event_id = ? AND user_id = ?
+            LIMIT 1;
+            """,
+            (int(event_id), int(user_id)),
+        )
+        return await cur.fetchone()
+
+    async def create_debate_registration(self, event_id: int, guild_id: int, user_id: int):
+        created_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT OR IGNORE INTO debate_registrations (event_id, guild_id, user_id, created_at)
+            VALUES (?, ?, ?, ?);
+            """,
+            (
+                int(event_id),
+                int(guild_id),
+                int(user_id),
+                created_at,
+            ),
+        )
+        await self._conn.commit()
+
+    async def remove_debate_registration(self, event_id: int, user_id: int):
+        await self._conn.execute(
+            """
+            DELETE FROM debate_registrations
+            WHERE event_id = ? AND user_id = ?;
+            """,
+            (int(event_id), int(user_id)),
+        )
+        await self._conn.commit()
+
+    async def list_debate_registrations(self, event_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT event_id, guild_id, user_id, created_at
+            FROM debate_registrations
+            WHERE event_id = ?
+            ORDER BY created_at ASC, user_id ASC;
+            """,
+            (int(event_id),),
+        )
+        return await cur.fetchall()
+
+    async def count_debate_registrations(self, event_id: int) -> int:
+        cur = await self._conn.execute(
+            "SELECT COUNT(*) FROM debate_registrations WHERE event_id = ?;",
+            (int(event_id),),
+        )
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def list_recent_finished_debate_events(self, guild_id: int, limit: int = 25):
+        cur = await self._conn.execute(
+            """
+            SELECT
+                e.id,
+                e.guild_id,
+                e.topic_id,
+                e.scheduled_for,
+                e.status,
+                e.started_at,
+                e.ended_at,
+                e.duration_seconds,
+                e.started_by,
+                e.ended_by,
+                e.podium_message_id,
+                e.speaker_snapshot_json,
+                e.created_at,
+                t.title,
+                t.description
+            FROM debate_events e
+            JOIN debate_topics t ON t.id = e.topic_id
+            WHERE e.guild_id = ? AND e.status = 'finished'
+            ORDER BY e.ended_at DESC, e.id DESC
+            LIMIT ?;
+            """,
+            (int(guild_id), int(limit)),
+        )
+        return await cur.fetchall()
 
     async def get_emoji_quiz_guild(self, guild_id: int):
         cur = await self._conn.execute(

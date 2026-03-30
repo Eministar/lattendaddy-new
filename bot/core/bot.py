@@ -62,6 +62,9 @@ from bot.modules.emoji_quiz.services.emoji_quiz_service import EmojiQuizService
 from bot.modules.emoji_quiz.cogs.emoji_quiz_commands import EmojiQuizCommands
 from bot.modules.emoji_quiz.cogs.emoji_quiz_listener import EmojiQuizListener
 from bot.modules.emoji_quiz.views.emoji_quiz_panel import EmojiQuizPanelView
+from bot.modules.debatten.services.debatten_service import DebattenService
+from bot.modules.debatten.cogs.debatten_commands import DebattenCommands
+from bot.modules.debatten.views.debatten_panel import DebattenPanelView
 from bot.modules.wort_zum_sonntag.cogs.wort_commands import WortCommands
 from bot.modules.wort_zum_sonntag.services.wort_service import WortZumSonntagService
 from bot.modules.wort_zum_sonntag.views.panel import WortPanelView
@@ -166,6 +169,7 @@ class StarryBot(commands.Bot):
         self.counting_service = CountingService(self, self.settings, self.db, self.logger)
         self.guess_number_service = GuessNumberService(self, self.settings, self.db, self.logger)
         self.emoji_quiz_service = EmojiQuizService(self, self.settings, self.db, self.logger)
+        self.debatten_service = DebattenService(self, self.settings, self.db, self.logger)
         self.suggestion_service = SuggestionService(self, self.settings, self.db, self.logger)
         self.seelsorge_service = SeelsorgeService(self, self.settings, self.db, self.logger)
         self.beichte_service = BeichteService(self, self.settings, self.db, self.logger)
@@ -194,6 +198,7 @@ class StarryBot(commands.Bot):
         self.reminder_loop.start()
         self.guess_number_loop.start()
         self.emoji_quiz_loop.start()
+        self.debatten_loop.start()
 
     async def setup_hook(self):
         setup_started_at = perf_counter()
@@ -235,6 +240,7 @@ class StarryBot(commands.Bot):
         await self.add_cog(GuessNumberCommands(self))
         await self.add_cog(EmojiQuizListener(self))
         await self.add_cog(EmojiQuizCommands(self))
+        await self.add_cog(DebattenCommands(self))
         await self.add_cog(WortCommands(self))
 
         await self.add_cog(FunCommands(self))
@@ -253,7 +259,7 @@ class StarryBot(commands.Bot):
         await self.add_cog(ModLogListener(self))
         await self.add_cog(ChannelRoleLogListener(self))
         await self.add_cog(ApplicationCommands(self))
-        console.line("BOOT", "Event-, Community- und Automations-Cogs aktiv (36).", color="green")
+        console.line("BOOT", "Event-, Community- und Automations-Cogs aktiv (37).", color="green")
 
         console.line("BOOT", "Registriere persistente Views und Dynamic Items …", color="cyan")
         self.add_view(SummaryView(self.ticket_service, ticket_id=0, status="open"))
@@ -271,9 +277,10 @@ class StarryBot(commands.Bot):
         self.add_view(FlagDashboardPersistentView())
         self.add_view(GuessNumberPanelView())
         self.add_view(EmojiQuizPanelView())
+        self.add_view(DebattenPanelView())
         self.add_view(PartyCreatePanelView())
         self.add_view(PartySettingsPanelView())
-        console.line("BOOT", "Persistente Views und Dynamic Items registriert (15 Views, 2 Dynamic Items).", color="green")
+        console.line("BOOT", "Persistente Views und Dynamic Items registriert (16 Views, 2 Dynamic Items).", color="green")
 
         @self.tree.error
         async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -397,6 +404,14 @@ class StarryBot(commands.Bot):
         except Exception:
             pass
 
+    @tasks.loop(seconds=20.0)
+    async def debatten_loop(self):
+        try:
+            if self.debatten_service:
+                await self.debatten_service.tick()
+        except Exception:
+            pass
+
     @reload_settings_loop.error
     async def reload_settings_loop_error(self, error: Exception):
             await self._emit_bot_error("reload_settings_loop", error, extra=None, guild=None)
@@ -444,6 +459,10 @@ class StarryBot(commands.Bot):
     @emoji_quiz_loop.error
     async def emoji_quiz_loop_error(self, error: Exception):
             await self._emit_bot_error("emoji_quiz_loop", error, extra=None, guild=None)
+
+    @debatten_loop.error
+    async def debatten_loop_error(self, error: Exception):
+            await self._emit_bot_error("debatten_loop", error, extra=None, guild=None)
 
 
     async def on_ready(self):
@@ -499,6 +518,11 @@ class StarryBot(commands.Bot):
             if self.emoji_quiz_service:
                 try:
                     await self.emoji_quiz_service.refresh_dashboard(guild)
+                except Exception:
+                    pass
+            if self.debatten_service:
+                try:
+                    await self.debatten_service.refresh_panel(guild, force=True)
                 except Exception:
                     pass
         console.line("BOOT", f"Guild-Warmup abgeschlossen ({warmup_guilds} Server, {perf_counter() - warmup_started_at:.2f}s).", color="green")
