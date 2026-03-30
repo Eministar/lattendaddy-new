@@ -125,6 +125,7 @@ class Database:
             except Exception:
                 pass
         await self._create_tables()
+        await self._ensure_birthdays_global_seed()
         await self._ensure_user_stats_monthly_legacy_seed()
         if self._driver == "mysql":
             try:

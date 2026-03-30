@@ -121,6 +121,7 @@ async def main():
 
     bot_task = asyncio.create_task(_run_bot())
     stop_task = asyncio.create_task(stop_event.wait())
+    bot_error: BaseException | None = None
 
     done, pending = await asyncio.wait(
         {bot_task, stop_task},
@@ -130,8 +131,8 @@ async def main():
     if bot_task in done:
         try:
             bot_task.result()
-        except Exception:
-            pass
+        except BaseException as exc:
+            bot_error = exc
 
     if stop_task in done and not bot_task.done():
         console.section("Shutdown", "Beende Dienste sauber", color="yellow")
@@ -140,11 +141,19 @@ async def main():
             await bot.close()
         except Exception:
             pass
+    elif bot_error is not None:
+        try:
+            if not bot.is_closed():
+                await bot.close()
+        except Exception:
+            pass
 
     for task in pending:
         task.cancel()
         try:
             await task
+        except asyncio.CancelledError:
+            pass
         except Exception:
             pass
 
@@ -167,6 +176,9 @@ async def main():
         console.line("BYE", f"Shutdown abgeschlossen. Gesamtlaufzeit: {total_runtime:.2f}s.", color="magenta")
     except Exception:
         pass
+
+    if bot_error is not None:
+        raise bot_error
 
 
 if __name__ == "__main__":
