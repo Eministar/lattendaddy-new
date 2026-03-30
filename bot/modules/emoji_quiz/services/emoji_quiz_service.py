@@ -180,6 +180,22 @@ class EmojiUserSubmitModal(discord.ui.Modal):
 class EmojiQuizService:
     TRANSIENT_MESSAGE_DELETE_AFTER = 20
     ANSWER_MESSAGE_DELETE_AFTER = 6
+    _TITLE_PREFIXES = (
+        "der ",
+        "die ",
+        "das ",
+        "den ",
+        "dem ",
+        "des ",
+        "ein ",
+        "eine ",
+        "einen ",
+        "einem ",
+        "einer ",
+        "the ",
+        "a ",
+        "an ",
+    )
 
     def __init__(self, bot: discord.Client, settings, db, logger):
         self.bot = bot
@@ -241,17 +257,49 @@ class EmojiQuizService:
         out = re.sub(r"\s+", " ", out).strip()
         return out
 
+    def _normalized_title_variants(self, text: str) -> set[str]:
+        base = self._normalize(text)
+        if not base:
+            return set()
+        variants = {base}
+        current = base
+        changed = True
+        while changed:
+            changed = False
+            for prefix in self._TITLE_PREFIXES:
+                if current.startswith(prefix):
+                    current = current[len(prefix):].strip()
+                    if current:
+                        variants.add(current)
+                    changed = True
+                    break
+        return variants
+
     def _fuzzy_match(self, text: str, candidate: str) -> bool:
-        left = self._normalize(text)
-        right = self._normalize(candidate)
-        if not left or not right:
+        left_variants = self._normalized_title_variants(text)
+        right_variants = self._normalized_title_variants(candidate)
+        if not left_variants or not right_variants:
             return False
-        if left == right:
+        for left in left_variants:
+            for right in right_variants:
+                if left == right:
+                    return True
+                if min(len(left), len(right)) <= 3:
+                    continue
+                if abs(len(left) - len(right)) > 3:
+                    continue
+                ratio = SequenceMatcher(None, left, right).ratio()
+                if ratio >= (0.82 if len(right) <= 8 else 0.76):
+                    return True
+        return False
+
+    def _matches_round_answer(self, guess: str, round_: ActiveEmojiRound) -> bool:
+        normalized = self._normalize(guess)
+        if not normalized:
+            return False
+        if normalized in round_.aliases:
             return True
-        if abs(len(left) - len(right)) > 3:
-            return False
-        ratio = SequenceMatcher(None, left, right).ratio()
-        return ratio >= 0.82 if len(right) <= 8 else ratio >= 0.76
+        return any(self._fuzzy_match(guess, candidate) for candidate in round_.aliases)
 
     def _clean_text(self, text: str) -> str:
         return re.sub(r"\s+", " ", str(text or "")).strip()
@@ -1257,8 +1305,7 @@ class EmojiQuizService:
         stats["attempts"] += 1
         await self._save_player_stats(message.guild.id, message.author.id, stats)
         round_.attempts += 1
-        normalized = self._normalize(content)
-        is_correct = normalized in round_.aliases
+        is_correct = self._matches_round_answer(content, round_)
         try:
             await message.add_reaction("✅" if is_correct else "❌")
         except Exception:
