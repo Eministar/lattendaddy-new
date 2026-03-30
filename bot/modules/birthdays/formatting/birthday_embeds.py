@@ -39,7 +39,7 @@ def build_birthday_announcement_view(
     guild: discord.Guild | None,
     accent_color: int,
     today_entries: list[dict],
-    all_entries: list[dict],
+    next_entries: list[dict],
     total_birthdays: int | None = None,
 ):
     cake = em(settings, "cake", guild) or "🎂"
@@ -48,9 +48,10 @@ def build_birthday_announcement_view(
     arrow2 = em(settings, "arrow2", guild) or "»"
     calendar_emoji = em(settings, "calendar", guild) or "🗓️"
 
-    header = f"**{cake} 𑁉 GEBURTSTAG**"
-    intro = f"{arrow2} Heute feiern wir genau diese Geburtstage im Server."
-    congrats = f"{party} **Happy Birthday!** {heart}"
+    header = f"**{cake} 𑁉 GEBURTSTAGSPANEL**"
+    intro = f"{arrow2} Hier siehst du die Geburtstage von heute und die nächsten anstehenden Feiern."
+    total_text = f"{calendar_emoji} **Eingetragene Geburtstage:** `{int(total_birthdays or 0)}`"
+    congrats = f"{party} **Happy Birthday!** {heart}" if today_entries else f"{heart} **Heute ist noch alles ruhig.**"
 
     today_lines: list[str] = []
     for entry in today_entries:
@@ -64,12 +65,29 @@ def build_birthday_announcement_view(
             today_lines.append(f"{party} - {mention}")
 
     today_block = _boxed_lines(today_lines, "🎈 - Heute hat niemand Geburtstag.")
+    next_lines: list[str] = []
+    for entry in next_entries:
+        member = entry.get("member")
+        user_id = int(entry.get("user_id") or 0)
+        mention = member.mention if member else f"<@{user_id}>"
+        day = int(entry.get("day") or 0)
+        month = int(entry.get("month") or 0)
+        days_until = int(entry.get("days_until") or 0)
+        turns = entry.get("turns")
+        when_text = f"am **{day:02d}.{month:02d}.**"
+        if turns is not None:
+            next_lines.append(f"{calendar_emoji} - {mention} in **{days_until}** Tagen, {when_text} und wird **{int(turns)}**")
+        else:
+            next_lines.append(f"{calendar_emoji} - {mention} in **{days_until}** Tagen, {when_text}")
+    next_block = _boxed_lines(next_lines, "🗓️ - Es sind noch keine weiteren Geburtstage eingetragen.")
 
     container = discord.ui.Container(accent_colour=accent_color)
     _add_banner(container)
-    container.add_item(discord.ui.TextDisplay(f"{header}\n{intro}\n\n{congrats}"))
+    container.add_item(discord.ui.TextDisplay(f"{header}\n{intro}\n\n{congrats}\n{total_text}"))
     container.add_item(discord.ui.Separator())
     container.add_item(discord.ui.TextDisplay(f"**Heute**\n{today_block}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**Demnächst**\n{next_block}"))
 
     view = discord.ui.LayoutView(timeout=None)
     view.add_item(container)

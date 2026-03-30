@@ -175,6 +175,17 @@ class BirthdayService:
             except Exception:
                 pass
 
+    async def _fetch_announcement_message(self, guild: discord.Guild, channel_id: int | None, message_id: int | None):
+        if not channel_id or not message_id:
+            return None
+        ch = await self._resolve_channel(guild, int(channel_id))
+        if not ch:
+            return None
+        try:
+            return await ch.fetch_message(int(message_id))
+        except Exception:
+            return None
+
     async def set_birthday(self, interaction: discord.Interaction, day: int, month: int, year: int):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
@@ -436,6 +447,8 @@ class BirthdayService:
         rows = rows if rows is not None else await self.db.list_birthdays_global_all()
         today_entries, all_entries = await self._collect_guild_birthdays(guild, rows, now)
         current_rows = [(e["user_id"], e["day"], e["month"], e["year"]) for e in today_entries]
+        next_limit = int(self.settings.get_guild(guild.id, "birthday.next_limit", 6) or 6)
+        next_entries = self._build_next_entries(all_entries, today, next_limit)
         await self.db.replace_birthdays_current(guild.id, today.isoformat(), current_rows)
         await self._sync_today_birthday_role(guild, {int(e["user_id"]) for e in today_entries})
 
@@ -458,33 +471,50 @@ class BirthdayService:
 
         payload = {
             "date": today.isoformat(),
+            "total_birthdays": int(len(all_entries)),
             "today": [
                 {"user_id": int(e["user_id"]), "day": int(e["day"]), "month": int(e["month"]), "year": int(e["year"])}
                 for e in today_entries
             ],
+            "next": [
+                {
+                    "user_id": int(e["user_id"]),
+                    "day": int(e["day"]),
+                    "month": int(e["month"]),
+                    "year": int(e["year"]),
+                    "days_until": int(e["days_until"]),
+                }
+                for e in next_entries
+            ],
         }
         payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
         allowed = discord.AllowedMentions(users=True, roles=False, everyone=False)
-
-        if not today_entries:
-            if state_message_id:
-                await self._delete_announcement_message(guild, state_channel_id, state_message_id)
-            await self.db.clear_birthday_announcement(guild.id)
-            return False
 
         view = build_birthday_announcement_view(
             self.settings,
             guild,
             self._embed_color(None, guild=guild),
             today_entries,
-            all_entries,
-            len(today_entries),
+            next_entries,
+            len(all_entries),
         )
 
-        if state_message_id and state_channel_id == int(channel_id) and state_date == today.isoformat() and state_payload == payload_json:
-            return True
-        if state_message_id:
+        existing_message = None
+        if state_message_id and state_channel_id == int(channel_id):
+            existing_message = await self._fetch_announcement_message(guild, state_channel_id, state_message_id)
+        elif state_message_id:
             await self._delete_announcement_message(guild, state_channel_id, state_message_id)
+
+        if existing_message and state_date == today.isoformat() and state_payload == payload_json:
+            return True
+
+        if existing_message:
+            try:
+                await existing_message.edit(view=view)
+                await self.db.set_birthday_announcement(guild.id, channel_id, int(existing_message.id), today.isoformat(), payload_json)
+                return True
+            except Exception:
+                pass
 
         try:
             msg = await ch.send(view=view, allowed_mentions=allowed)

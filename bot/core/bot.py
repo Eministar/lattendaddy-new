@@ -500,6 +500,11 @@ class StarryBot(commands.Bot):
                     await self.birthday_service.ensure_roles(guild)
                 except Exception:
                     pass
+            if self.birthday_service:
+                try:
+                    await self.birthday_service.announce_today(guild)
+                except Exception:
+                    pass
             if self.counting_service:
                 try:
                     await self.counting_service.sync_guild(guild)
