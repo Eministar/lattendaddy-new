@@ -1047,19 +1047,6 @@ class Database:
         await self._ensure_column("user_stats", "invite_count", "INTEGER NOT NULL DEFAULT 0")
         await self._ensure_column("user_stats", "invite_left_count", "INTEGER NOT NULL DEFAULT 0")
 
-    async def _ensure_column(self, table: str, column: str, decl: str):
-        try:
-            cur = await self._conn.execute(f"PRAGMA table_info({table});")
-            rows = await cur.fetchall()
-            cols = {str(r[1]) for r in rows if r}
-            if column not in cols:
-                await self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl};")
-        except Exception:
-            pass
-
-        await self._conn.commit()
-        await self._ensure_birthdays_global_seed()
-
     async def _table_has_column(self, table: str, column: str) -> bool:
         if self._driver == "sqlite":
             cur = await self._conn.execute(f"PRAGMA table_info({table});")

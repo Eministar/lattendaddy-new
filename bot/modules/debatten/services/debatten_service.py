@@ -385,18 +385,20 @@ class DebattenService:
                 "scheduled_for": str((state.get("next_event") or {}).get("scheduled_for") or ""),
                 "title": str((state.get("next_event") or {}).get("topic_title") or ""),
                 "registrations": int(state.get("next_registration_count") or 0),
+                "preview": str(state.get("next_registration_preview") or ""),
             },
             "live_event": {
                 "id": int((state.get("live_event") or {}).get("id") or 0),
                 "started_at": str((state.get("live_event") or {}).get("started_at") or ""),
                 "title": str((state.get("live_event") or {}).get("topic_title") or ""),
-                "speakers": len(list((state.get("live_event") or {}).get("speaker_snapshot") or [])),
+                "speakers": list((state.get("live_event") or {}).get("speaker_snapshot") or []),
             },
             "counts": {
                 "pending": int(state.get("pending_topic_count") or 0),
                 "approved": int(state.get("approved_topic_count") or 0),
                 "finished": int(state.get("finished_event_count") or 0),
             },
+            "podium": str(state.get("podium_mention") or ""),
         }
         return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
@@ -522,6 +524,11 @@ class DebattenService:
                 interaction,
                 "Es sind nur politische Debattenthemen erlaubt. Bitte formuliere das Thema klar politisch.",
             )
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.defer(ephemeral=True, thinking=True)
+            except Exception:
+                pass
         topic_id = await self.db.create_debate_topic(
             interaction.guild.id,
             clean_title,
@@ -659,6 +666,11 @@ class DebattenService:
     async def toggle_signup(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await _ephemeral(interaction, "Nur im Server nutzbar.")
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.defer(ephemeral=True, thinking=False)
+            except Exception:
+                pass
         async with self._guild_lock(interaction.guild.id):
             event = self._event_from_row(await self.db.get_next_planned_debate_event(interaction.guild.id))
             if not event:

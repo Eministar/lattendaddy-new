@@ -93,6 +93,7 @@ class DebattenCommands(commands.Cog):
         err = self.permission_service.action_error(interaction.user, "debate_topic_create")
         if err:
             return await _ephemeral(interaction, err)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         try:
             topic_id = await self.service.create_official_topic(
                 interaction.guild,
@@ -112,6 +113,7 @@ class DebattenCommands(commands.Cog):
         err = self.permission_service.action_error(interaction.user, "debate_topic_approve")
         if err:
             return await _ephemeral(interaction, err)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         ok, msg = await self.service.set_topic_status(
             interaction.guild,
             interaction.user,
@@ -129,6 +131,7 @@ class DebattenCommands(commands.Cog):
         err = self.permission_service.action_error(interaction.user, "debate_topic_reject")
         if err:
             return await _ephemeral(interaction, err)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         ok, msg = await self.service.set_topic_status(
             interaction.guild,
             interaction.user,
@@ -164,6 +167,7 @@ class DebattenCommands(commands.Cog):
         err = self.permission_service.action_error(interaction.user, "debate_schedule")
         if err:
             return await _ephemeral(interaction, err)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         ok, msg = await self.service.plan_debate(
             interaction.guild,
             interaction.user,
@@ -194,6 +198,7 @@ class DebattenCommands(commands.Cog):
         err = self.permission_service.action_error(interaction.user, "debate_start")
         if err:
             return await _ephemeral(interaction, err)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         speakers = [member for member in (sprecher_1, sprecher_2, sprecher_3, sprecher_4) if member]
         ok, msg = await self.service.start_debate(
             interaction.guild,
@@ -210,5 +215,6 @@ class DebattenCommands(commands.Cog):
         err = self.permission_service.action_error(interaction.user, "debate_end")
         if err:
             return await _ephemeral(interaction, err)
+        await interaction.response.defer(ephemeral=True, thinking=True)
         ok, msg = await self.service.end_debate(interaction.guild, interaction.user)
         await _ephemeral(interaction, msg)
