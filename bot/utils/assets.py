@@ -52,4 +52,4 @@ class Banners:
     WZM_DENIED = asset_url("wzm/wzm-denied-banner.png")
     WZM_WAITING = asset_url("wzm/wzm-waiting-banner.png")
 
-    EMOJIS = asset_url("emoji-banner.png")
+    EMOJIS = asset_url("emoji-quiz-banner.png")

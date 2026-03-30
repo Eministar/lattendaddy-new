@@ -40,6 +40,7 @@ def build_dashboard_view(
     header = f"**{info} 𑁉 EMOJI QUIZ**"
     desc = (
         f"{arrow2} Wähle eine Kategorie im Dropdown oder starte eine Zufallsrunde.\n"
+        f"{arrow2} Mehrere User können gleichzeitig ihre eigene Runde spielen.\n"
         f"{arrow2} Die erste richtige Antwort gewinnt Punkte, Streak und Platz im Leaderboard.\n"
         f"{arrow2} Alle Quiz-Nachrichten außer dem Panel werden automatisch wieder gelöscht.\n\n"
         f"┏`📍` - Ziel: {stats.get('target', 'Nicht gesetzt')}\n"
@@ -75,18 +76,23 @@ def build_round_embed(
     end_at: datetime,
     round_number: int,
     started_by: int | None = None,
+    player_user_id: int | None = None,
     auto_started: bool = False,
     hints_enabled: bool = False,
 ) -> discord.Embed:
     mode = "Auto-Quiz" if auto_started else "Manuell"
     hint_text = "Aktiv" if hints_enabled else "Aus"
+    scope_text = f"<@{int(player_user_id)}>" if player_user_id else "Alle im Channel"
+    answer_text = "Nur deine Nachrichten zählen automatisch." if player_user_id else "Alle Nachrichten im Channel zählen."
     desc = (
         f"## {prompt}\n\n"
         f"┏`🎮` - Runde: **#{int(round_number)}**\n"
         f"┣`🗂️` - Kategorie: **{category_label}**\n"
         f"┣`⚙️` - Modus: **{mode}**\n"
         f"┣`👤` - Gestartet von: {f'<@{int(started_by)}>' if started_by else 'System'}\n"
+        f"┣`🎯` - Gültig für: **{scope_text}**\n"
         f"┣`💡` - Hinweise: **{hint_text}**\n"
+        f"┣`💬` - Antworten: **{answer_text}**\n"
         f"┗`⏱️` - Ende: {format_dt(end_at, style='R')} ({format_dt(end_at, style='t')})"
     )
     return discord.Embed(
