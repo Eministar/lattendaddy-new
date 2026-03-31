@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import discord
 from discord.utils import format_dt
+from bot.utils.assets import Banners
 from bot.utils.emojis import em
 
 
@@ -87,9 +88,27 @@ def build_notice_embed(
     )
 
 
-def build_panel_embed(settings, guild: discord.Guild | None, state: dict) -> discord.Embed:
+def _add_panel_banner(container: discord.ui.Container):
+    try:
+        gallery = discord.ui.MediaGallery()
+        gallery.add_item(media=Banners.DEBATE)
+        container.add_item(gallery)
+        container.add_item(discord.ui.Separator())
+    except Exception:
+        pass
+
+
+def build_panel_container(
+    settings,
+    guild: discord.Guild | None,
+    state: dict,
+    signup_button: discord.ui.Button,
+    topic_button: discord.ui.Button,
+    archive_select: discord.ui.Select,
+) -> discord.ui.Container:
     arrow2 = em(settings, "arrow2", guild) or "»"
     info = em(settings, "info", guild) or "ℹ️"
+    sparkles = em(settings, "sparkles", guild) or "✨"
     next_event = state.get("next_event") or {}
     live_event = state.get("live_event") or {}
     next_value = "┗`🗓️` - Aktuell ist noch keine Debatte geplant."
@@ -118,23 +137,31 @@ def build_panel_embed(settings, guild: discord.Guild | None, state: dict) -> dis
         f"┣`🗂️` - Archivierte Debatten: **{int(state.get('finished_event_count', 0) or 0)}**\n"
         f"┗`📚` - Archiv: Vergangene Debatten unten im Dropdown"
     )
-
-    embed = discord.Embed(
-        title=f"{info} 𑁉 BKT-DEBATTEN",
-        description=(
-            f"{arrow2} Moderierte politische Community-Debatten im Starry-Design.\n"
-            f"{arrow2} Melde dich für die nächste Runde an, reiche Themen ein und verfolge geplante wie vergangene Debatten.\n"
-            f"{arrow2} Beim Start erstellt der Bot automatisch die Stage und schaltet angenommene Sprecher frei.\n\n"
-            f"**Nächste Debatte**\n{next_value}\n\n"
-            f"**Live-Status**\n{live_value}\n\n"
-            f"**Themen & Archiv**\n{archive_value}"
-        ),
-        color=_color(settings, guild),
+    header = f"**{info} 𑁉 BKT-DEBATTEN**"
+    intro = (
+        f"{arrow2} Melde dich für die nächste Debatte an oder reiche ein neues Thema ein.\n"
+        f"{arrow2} Angenommene Sprecher werden beim Start automatisch für die Stage freigeschaltet."
     )
-    updated_at = _parse_dt(state.get("updated_at"))
-    if updated_at:
-        embed.set_footer(text=f"Live aktualisiert • {updated_at.astimezone(timezone.utc).strftime('%d.%m.%Y %H:%M UTC')}")
-    return embed
+    cta = f"{sparkles} **Debatte mitgestalten** über Anmeldung, Themeneinsendung und Archiv unten."
+
+    container = discord.ui.Container(accent_colour=_color(settings, guild))
+    _add_panel_banner(container)
+    container.add_item(discord.ui.TextDisplay(f"{header}\n{intro}\n\n{cta}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**Nächste Debatte**\n{next_value}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**Live-Status**\n{live_value}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**Themen & Archiv**\n{archive_value}"))
+    container.add_item(discord.ui.Separator())
+    button_row = discord.ui.ActionRow()
+    button_row.add_item(signup_button)
+    button_row.add_item(topic_button)
+    container.add_item(button_row)
+    archive_row = discord.ui.ActionRow()
+    archive_row.add_item(archive_select)
+    container.add_item(archive_row)
+    return container
 
 
 def build_signup_review_embed(settings, guild: discord.Guild | None, payload: dict) -> discord.Embed:

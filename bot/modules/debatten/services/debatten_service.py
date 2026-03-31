@@ -11,7 +11,6 @@ import discord
 from bot.modules.debatten.formatting.debatten_embeds import (
     build_archive_embed,
     build_notice_embed,
-    build_panel_embed,
     build_podium_embed,
     build_signup_review_embed,
     build_topic_review_embed,
@@ -574,12 +573,17 @@ class DebattenService:
             return False
         if int(message.author.id) != int(self.bot.user.id):
             return False
+        def _walk(items) -> bool:
+            for item in list(items or []):
+                custom_id = str(getattr(item, "custom_id", "") or "")
+                if custom_id.startswith("starry:debatten:"):
+                    return True
+                if _walk(getattr(item, "children", []) or []):
+                    return True
+            return False
         try:
-            for row in list(message.components or []):
-                for item in list(getattr(row, "children", []) or []):
-                    custom_id = str(getattr(item, "custom_id", "") or "")
-                    if custom_id.startswith("starry:debatten:"):
-                        return True
+            if _walk(message.components or []):
+                return True
         except Exception:
             return False
         return False
@@ -602,7 +606,15 @@ class DebattenService:
         from bot.modules.debatten.views.debatten_panel import DebattenPanelView
 
         options, disabled = await self._archive_options(guild_id)
-        return DebattenPanelView(archive_options=options, archive_disabled=disabled)
+        guild = self.bot.get_guild(int(guild_id))
+        state = await self._panel_state(guild) if guild else {}
+        return DebattenPanelView(
+            settings=self.settings,
+            guild=guild,
+            state=state,
+            archive_options=options,
+            archive_disabled=disabled,
+        )
 
     async def configure(
         self,
@@ -631,13 +643,21 @@ class DebattenService:
         signature = self._signature_payload(panel_state)
         if not force and self._panel_signatures.get(int(guild.id)) == signature:
             return
-        embed = build_panel_embed(self.settings, guild, panel_state)
-        view = await self._build_panel_view(guild.id)
+        from bot.modules.debatten.views.debatten_panel import DebattenPanelView
+
+        options, disabled = await self._archive_options(guild.id)
+        view = DebattenPanelView(
+            settings=self.settings,
+            guild=guild,
+            state=panel_state,
+            archive_options=options,
+            archive_disabled=disabled,
+        )
         message_id = int(state.get("panel_message_id") or 0)
         if message_id:
             try:
                 message = await panel_channel.fetch_message(int(message_id))
-                await message.edit(embed=embed, view=view)
+                await message.edit(view=view, content=None)
                 self._panel_signatures[int(guild.id)] = signature
                 return
             except Exception:
@@ -645,14 +665,14 @@ class DebattenService:
         reuse = await self._find_existing_panel_message(panel_channel)
         if reuse:
             try:
-                await reuse.edit(embed=embed, view=view)
+                await reuse.edit(view=view, content=None)
                 state["panel_message_id"] = int(reuse.id)
                 await self._save_guild_state(state)
                 self._panel_signatures[int(guild.id)] = signature
                 return
             except Exception:
                 pass
-        message = await panel_channel.send(embed=embed, view=view)
+        message = await panel_channel.send(view=view)
         state["panel_message_id"] = int(message.id)
         await self._save_guild_state(state)
         self._panel_signatures[int(guild.id)] = signature

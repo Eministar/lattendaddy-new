@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import discord
 
-from bot.modules.debatten.formatting.debatten_embeds import build_notice_embed
+from bot.modules.debatten.formatting.debatten_embeds import build_notice_embed, build_panel_container
 
 
 async def _send_ephemeral(
@@ -120,9 +120,25 @@ class DebattenArchiveSelect(discord.ui.Select):
         return await _send_ephemeral(interaction, embed=embed)
 
 
-class DebattenPanelView(discord.ui.View):
-    def __init__(self, archive_options: list[discord.SelectOption] | None = None, archive_disabled: bool = False):
+class DebattenPanelView(discord.ui.LayoutView):
+    def __init__(
+        self,
+        settings=None,
+        guild: discord.Guild | None = None,
+        state: dict | None = None,
+        archive_options: list[discord.SelectOption] | None = None,
+        archive_disabled: bool = False,
+    ):
         super().__init__(timeout=None)
-        self.add_item(DebattenSignupButton())
-        self.add_item(DebattenTopicButton())
-        self.add_item(DebattenArchiveSelect(archive_options=archive_options, disabled=archive_disabled))
+        signup_button = DebattenSignupButton()
+        topic_button = DebattenTopicButton()
+        archive_select = DebattenArchiveSelect(archive_options=archive_options, disabled=archive_disabled)
+        container = build_panel_container(
+            settings,
+            guild,
+            state or {},
+            signup_button,
+            topic_button,
+            archive_select,
+        )
+        self.add_item(container)

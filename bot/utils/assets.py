@@ -53,3 +53,5 @@ class Banners:
     WZM_WAITING = asset_url("wzm/wzm-waiting-banner.png")
 
     EMOJIS = asset_url("emoji-quiz-banner.png")
+
+    DEBATE = asset_url("debate-banner.png")
