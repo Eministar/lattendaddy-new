@@ -10,6 +10,8 @@ from bot.utils.emojis import em
 
 def _color(settings, guild: discord.Guild | None) -> int:
     gid = guild.id if guild else 0
+    if settings is None:
+        return 0xB16B91
     raw = str(settings.get_guild(gid, "design.accent_color", "#B16B91") or "").replace("#", "").strip()
     try:
         return int(raw, 16)
