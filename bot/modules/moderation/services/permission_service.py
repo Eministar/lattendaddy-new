@@ -131,6 +131,8 @@ MODERATION_ACTIONS: tuple[ModerationActionSpec, ...] = (
     ModerationActionSpec("debate_topic_reject", "Debate Topic Reject", "Debatten-Themen ablehnen", "manage_guild"),
     ModerationActionSpec("debate_topic_list", "Debate Topic List", "Debatten-Themen anzeigen", "manage_guild"),
     ModerationActionSpec("debate_schedule", "Debate Schedule", "Debatten planen", "manage_channels"),
+    ModerationActionSpec("debate_signup_approve", "Debate Signup Approve", "Debatten-Anmeldungen annehmen", "manage_channels"),
+    ModerationActionSpec("debate_signup_reject", "Debate Signup Reject", "Debatten-Anmeldungen ablehnen", "manage_channels"),
     ModerationActionSpec("debate_start", "Debate Start", "Debatten im Podium starten", "manage_channels"),
     ModerationActionSpec("debate_end", "Debate End", "Debatten beenden und archivieren", "manage_channels"),
     ModerationActionSpec("news_send", "News Send", "Neueste News senden", "manage_guild"),

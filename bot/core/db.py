@@ -1016,6 +1016,7 @@ class Database:
             started_by INTEGER,
             ended_by INTEGER,
             podium_message_id INTEGER,
+            stage_channel_id INTEGER,
             speaker_snapshot_json TEXT,
             created_at TEXT NOT NULL
         );
@@ -1037,12 +1038,17 @@ class Database:
             event_id INTEGER NOT NULL,
             guild_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
+            status VARCHAR(32) NOT NULL DEFAULT 'pending',
+            reviewed_by INTEGER,
+            reviewed_at TEXT,
+            review_note TEXT,
             created_at TEXT NOT NULL,
             PRIMARY KEY (event_id, user_id)
         );
         """)
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_debate_registrations_user ON debate_registrations(guild_id, user_id)")
+        await self._ensure_debate_columns()
 
     async def _ensure_user_stats_columns(self):
         await self._ensure_column("user_stats", "invite_count", "INTEGER NOT NULL DEFAULT 0")
@@ -1108,6 +1114,14 @@ class Database:
         await self._ensure_column("counting_states", "last_count_value", "INTEGER")
         await self._ensure_column("counting_states", "last_count_user_id", "INTEGER")
         await self._ensure_column("counting_states", "last_count_at", "TEXT")
+        await self._conn.commit()
+
+    async def _ensure_debate_columns(self):
+        await self._ensure_column("debate_events", "stage_channel_id", "BIGINT")
+        await self._ensure_column("debate_registrations", "status", "VARCHAR(32) NOT NULL DEFAULT 'pending'")
+        await self._ensure_column("debate_registrations", "reviewed_by", "BIGINT")
+        await self._ensure_column("debate_registrations", "reviewed_at", "TEXT")
+        await self._ensure_column("debate_registrations", "review_note", "TEXT")
         await self._conn.commit()
 
     async def _ensure_poll_columns(self):
@@ -4336,10 +4350,11 @@ class Database:
                 started_by,
                 ended_by,
                 podium_message_id,
+                stage_channel_id,
                 speaker_snapshot_json,
                 created_at
             )
-            VALUES (?, ?, ?, 'planned', NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?);
+            VALUES (?, ?, ?, 'planned', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?);
             """,
             (
                 int(guild_id),
@@ -4366,6 +4381,7 @@ class Database:
                 e.started_by,
                 e.ended_by,
                 e.podium_message_id,
+                e.stage_channel_id,
                 e.speaker_snapshot_json,
                 e.created_at,
                 t.title,
@@ -4393,6 +4409,7 @@ class Database:
                 e.started_by,
                 e.ended_by,
                 e.podium_message_id,
+                e.stage_channel_id,
                 e.speaker_snapshot_json,
                 e.created_at,
                 t.title,
@@ -4425,6 +4442,7 @@ class Database:
                 e.started_by,
                 e.ended_by,
                 e.podium_message_id,
+                e.stage_channel_id,
                 e.speaker_snapshot_json,
                 e.created_at,
                 t.title,
@@ -4454,6 +4472,7 @@ class Database:
                 e.started_by,
                 e.ended_by,
                 e.podium_message_id,
+                e.stage_channel_id,
                 e.speaker_snapshot_json,
                 e.created_at,
                 t.title,
@@ -4485,6 +4504,7 @@ class Database:
         started_by: int,
         started_at: str,
         podium_message_id: int | None,
+        stage_channel_id: int | None,
         speaker_snapshot_json: str | None,
     ):
         await self._conn.execute(
@@ -4494,6 +4514,7 @@ class Database:
                 started_at = ?,
                 started_by = ?,
                 podium_message_id = ?,
+                stage_channel_id = ?,
                 speaker_snapshot_json = ?
             WHERE id = ?;
             """,
@@ -4501,26 +4522,36 @@ class Database:
                 str(started_at),
                 int(started_by),
                 int(podium_message_id) if podium_message_id else None,
+                int(stage_channel_id) if stage_channel_id else None,
                 str(speaker_snapshot_json) if speaker_snapshot_json is not None else None,
                 int(event_id),
             ),
         )
         await self._conn.commit()
 
-    async def finish_debate_event(self, event_id: int, ended_by: int, ended_at: str, duration_seconds: int):
+    async def finish_debate_event(
+        self,
+        event_id: int,
+        ended_by: int,
+        ended_at: str,
+        duration_seconds: int,
+        speaker_snapshot_json: str | None = None,
+    ):
         await self._conn.execute(
             """
             UPDATE debate_events
             SET status = 'finished',
                 ended_at = ?,
                 ended_by = ?,
-                duration_seconds = ?
+                duration_seconds = ?,
+                speaker_snapshot_json = COALESCE(?, speaker_snapshot_json)
             WHERE id = ?;
             """,
             (
                 str(ended_at),
                 int(ended_by),
                 int(duration_seconds),
+                str(speaker_snapshot_json) if speaker_snapshot_json is not None else None,
                 int(event_id),
             ),
         )
@@ -4529,7 +4560,7 @@ class Database:
     async def get_debate_registration(self, event_id: int, user_id: int):
         cur = await self._conn.execute(
             """
-            SELECT event_id, guild_id, user_id, created_at
+            SELECT event_id, guild_id, user_id, status, reviewed_by, reviewed_at, review_note, created_at
             FROM debate_registrations
             WHERE event_id = ? AND user_id = ?
             LIMIT 1;
@@ -4542,8 +4573,8 @@ class Database:
         created_at = await self.now_iso()
         await self._conn.execute(
             """
-            INSERT OR IGNORE INTO debate_registrations (event_id, guild_id, user_id, created_at)
-            VALUES (?, ?, ?, ?);
+            INSERT OR IGNORE INTO debate_registrations (event_id, guild_id, user_id, status, reviewed_by, reviewed_at, review_note, created_at)
+            VALUES (?, ?, ?, 'pending', NULL, NULL, NULL, ?);
             """,
             (
                 int(event_id),
@@ -4553,6 +4584,37 @@ class Database:
             ),
         )
         await self._conn.commit()
+
+    async def set_debate_registration_status(
+        self,
+        event_id: int,
+        user_id: int,
+        status: str,
+        *,
+        reviewed_by: int | None = None,
+        review_note: str | None = None,
+    ) -> int:
+        reviewed_at = await self.now_iso()
+        cur = await self._conn.execute(
+            """
+            UPDATE debate_registrations
+            SET status = ?,
+                reviewed_by = ?,
+                reviewed_at = ?,
+                review_note = ?
+            WHERE event_id = ? AND user_id = ?;
+            """,
+            (
+                str(status),
+                int(reviewed_by) if reviewed_by else None,
+                str(reviewed_at),
+                str(review_note) if review_note is not None else None,
+                int(event_id),
+                int(user_id),
+            ),
+        )
+        await self._conn.commit()
+        return int(getattr(cur, "rowcount", 0) or 0)
 
     async def remove_debate_registration(self, event_id: int, user_id: int):
         await self._conn.execute(
@@ -4564,23 +4626,28 @@ class Database:
         )
         await self._conn.commit()
 
-    async def list_debate_registrations(self, event_id: int):
-        cur = await self._conn.execute(
-            """
-            SELECT event_id, guild_id, user_id, created_at
+    async def list_debate_registrations(self, event_id: int, status: str | None = None):
+        sql = """
+            SELECT event_id, guild_id, user_id, status, reviewed_by, reviewed_at, review_note, created_at
             FROM debate_registrations
             WHERE event_id = ?
-            ORDER BY created_at ASC, user_id ASC;
-            """,
-            (int(event_id),),
-        )
+        """
+        params: list = [int(event_id)]
+        if status:
+            sql += " AND status = ?"
+            params.append(str(status))
+        sql += " ORDER BY created_at ASC, user_id ASC;"
+        cur = await self._conn.execute(sql, tuple(params))
         return await cur.fetchall()
 
-    async def count_debate_registrations(self, event_id: int) -> int:
-        cur = await self._conn.execute(
-            "SELECT COUNT(*) FROM debate_registrations WHERE event_id = ?;",
-            (int(event_id),),
-        )
+    async def count_debate_registrations(self, event_id: int, status: str | None = None) -> int:
+        sql = "SELECT COUNT(*) FROM debate_registrations WHERE event_id = ?"
+        params: list = [int(event_id)]
+        if status:
+            sql += " AND status = ?"
+            params.append(str(status))
+        sql += ";"
+        cur = await self._conn.execute(sql, tuple(params))
         row = await cur.fetchone()
         return int(row[0] if row else 0)
 
@@ -4599,6 +4666,7 @@ class Database:
                 e.started_by,
                 e.ended_by,
                 e.podium_message_id,
+                e.stage_channel_id,
                 e.speaker_snapshot_json,
                 e.created_at,
                 t.title,

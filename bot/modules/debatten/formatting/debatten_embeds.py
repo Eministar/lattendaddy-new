@@ -94,8 +94,9 @@ def build_panel_embed(settings, guild: discord.Guild | None, state: dict) -> dis
         next_value = (
             f"**{next_event.get('topic_title', 'Unbekanntes Thema')}**\n"
             f"• Termin: {_fmt_dt(next_event.get('scheduled_for'), 'F')} ({_fmt_dt(next_event.get('scheduled_for'), 'R')})\n"
-            f"• Anmeldungen: **{int(state.get('next_registration_count', 0) or 0)}**\n"
-            f"• Vorschau: {state.get('next_registration_preview', 'Noch niemand angemeldet.')}"
+            f"• Bestätigte Sprecher: **{int(state.get('next_registration_count', 0) or 0)}**\n"
+            f"• Offene Anmeldungen: **{int(state.get('next_pending_signup_count', 0) or 0)}**\n"
+            f"• Vorschau: {state.get('next_registration_preview', 'Noch keine Sprecher bestätigt.')}"
         )
 
     live_value = "Derzeit läuft keine Debatte."
@@ -104,6 +105,7 @@ def build_panel_embed(settings, guild: discord.Guild | None, state: dict) -> dis
             f"**{live_event.get('topic_title', 'Unbekanntes Thema')}**\n"
             f"• Start: {_fmt_dt(live_event.get('started_at'), 'F')} ({_fmt_dt(live_event.get('started_at'), 'R')})\n"
             f"• Sprecher: **{int(state.get('live_speaker_count', 0) or 0)}**\n"
+            f"• Stage: {state.get('live_stage_mention', 'Nicht gesetzt')}\n"
             f"• Podium: {state.get('podium_mention', 'Nicht gesetzt')}"
         )
 
@@ -117,8 +119,8 @@ def build_panel_embed(settings, guild: discord.Guild | None, state: dict) -> dis
     embed = discord.Embed(
         title="🎙️ 𑁉 BKT-DEBATTEN",
         description=(
-            "Die BKT-Debatten sind moderierte politische Community-Debatten. "
-            "Hier kannst du dich für die nächste Runde anmelden oder ein politisches Thema einreichen."
+            "Die BKT-Debatten sind moderierte politische Community-Debatten im typischen Starry-Stil. "
+            "Hier meldest du dich für die nächste Runde an, reichst Themen ein und verfolgst geplante wie vergangene Debatten."
         ),
         color=_color(settings, guild),
     )
@@ -133,6 +135,7 @@ def build_panel_embed(settings, guild: discord.Guild | None, state: dict) -> dis
 
 def build_signup_review_embed(settings, guild: discord.Guild | None, payload: dict) -> discord.Embed:
     action = "angemeldet" if payload.get("joined") else "abgemeldet"
+    status_label = str(payload.get("status_label") or ("Offen" if payload.get("joined") else "Entfernt"))
     embed = discord.Embed(
         title="🗳️ 𑁉 DEBATTEN-ANMELDUNG",
         description=(
@@ -140,10 +143,17 @@ def build_signup_review_embed(settings, guild: discord.Guild | None, payload: di
             f"• User: <@{int(payload.get('user_id') or 0)}>\n"
             f"• Debatte: **{payload.get('topic_title', 'Unbekannt')}**\n"
             f"• Termin: {_fmt_dt(payload.get('scheduled_for'), 'F')}\n"
-            f"• Event-ID: **#{int(payload.get('event_id') or 0)}**"
+            f"• Event-ID: **#{int(payload.get('event_id') or 0)}**\n"
+            f"• Status: **{status_label}**"
         ),
         color=_color(settings, guild),
     )
+    note = str(payload.get("review_note") or "").strip()
+    if note:
+        embed.add_field(name="Notiz", value=note, inline=False)
+    reviewed_by = int(payload.get("reviewed_by") or 0)
+    if reviewed_by:
+        embed.set_footer(text=f"Bearbeitet von {reviewed_by}")
     return embed
 
 
@@ -174,6 +184,8 @@ def build_topic_review_embed(settings, guild: discord.Guild | None, payload: dic
 
 def build_podium_embed(settings, guild: discord.Guild | None, event: dict, *, live: bool) -> discord.Embed:
     title = "🎙️ 𑁉 BKT-DEBATTE LIVE" if live else "🗂️ 𑁉 BKT-DEBATTE BEENDET"
+    stage_channel_id = int(event.get("stage_channel_id") or 0)
+    stage_mention = f"<#{stage_channel_id}>" if stage_channel_id else "Nicht aktiv"
     status_line = (
         f"• Start: {_fmt_dt(event.get('started_at'), 'F')} ({_fmt_dt(event.get('started_at'), 'R')})"
         if live
@@ -195,7 +207,8 @@ def build_podium_embed(settings, guild: discord.Guild | None, event: dict, *, li
         name="Ablauf",
         value=(
             f"• Geplant für: {_fmt_dt(event.get('scheduled_for'), 'F')}\n"
-            f"{status_line}"
+            f"{status_line}\n"
+            f"• Stage: {stage_mention}"
         ),
         inline=False,
     )

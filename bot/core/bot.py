@@ -64,6 +64,7 @@ from bot.modules.emoji_quiz.cogs.emoji_quiz_listener import EmojiQuizListener
 from bot.modules.emoji_quiz.views.emoji_quiz_panel import EmojiQuizPanelView
 from bot.modules.debatten.services.debatten_service import DebattenService
 from bot.modules.debatten.cogs.debatten_commands import DebattenCommands
+from bot.modules.debatten.cogs.debatten_listener import DebattenListener
 from bot.modules.debatten.views.debatten_panel import DebattenPanelView
 from bot.modules.wort_zum_sonntag.cogs.wort_commands import WortCommands
 from bot.modules.wort_zum_sonntag.services.wort_service import WortZumSonntagService
@@ -240,6 +241,7 @@ class StarryBot(commands.Bot):
         await self.add_cog(GuessNumberCommands(self))
         await self.add_cog(EmojiQuizListener(self))
         await self.add_cog(EmojiQuizCommands(self))
+        await self.add_cog(DebattenListener(self))
         await self.add_cog(DebattenCommands(self))
         await self.add_cog(WortCommands(self))
 

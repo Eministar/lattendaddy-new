@@ -186,6 +186,32 @@ class BirthdayService:
         except Exception:
             return None
 
+    def _is_birthday_panel_message(self, message: discord.Message | None) -> bool:
+        if not message or not getattr(message, "author", None) or not getattr(self.bot, "user", None):
+            return False
+        if int(message.author.id) != int(self.bot.user.id):
+            return False
+        if getattr(message, "content", None):
+            return False
+        try:
+            return bool(list(message.components or []))
+        except Exception:
+            return False
+
+    async def _find_existing_announcement_message(self, channel: discord.abc.Messageable) -> discord.Message | None:
+        me = getattr(self.bot, "user", None)
+        if not me or not hasattr(channel, "history"):
+            return None
+        try:
+            async for message in channel.history(limit=15):
+                if int(getattr(getattr(message, "author", None), "id", 0) or 0) != int(me.id):
+                    continue
+                if self._is_birthday_panel_message(message):
+                    return message
+        except Exception:
+            return None
+        return None
+
     async def set_birthday(self, interaction: discord.Interaction, day: int, month: int, year: int):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
@@ -504,6 +530,16 @@ class BirthdayService:
             existing_message = await self._fetch_announcement_message(guild, state_channel_id, state_message_id)
         elif state_message_id:
             await self._delete_announcement_message(guild, state_channel_id, state_message_id)
+        if not existing_message:
+            existing_message = await self._find_existing_announcement_message(ch)
+            if existing_message:
+                await self.db.set_birthday_announcement(
+                    guild.id,
+                    channel_id,
+                    int(existing_message.id),
+                    today.isoformat(),
+                    payload_json,
+                )
 
         if existing_message and state_date == today.isoformat() and state_payload == payload_json:
             return True
@@ -535,7 +571,7 @@ class BirthdayService:
             await self.announce_today(guild, rows=rows)
 
     async def auto_react(self, message: discord.Message):
-        if not message.guild:
+        if not message.guild or message.author.bot:
             return
         channel_id = self.settings.get_guild_int(message.guild.id, "birthday.channel_id")
         if not channel_id or message.channel.id != channel_id:

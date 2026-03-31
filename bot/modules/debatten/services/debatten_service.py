@@ -204,6 +204,20 @@ class DebattenService:
             out.append({"user_id": user_id, "name": name or f"User {user_id}"})
         return out
 
+    def _registration_from_row(self, row) -> dict | None:
+        if not row:
+            return None
+        return {
+            "event_id": int(row[0]),
+            "guild_id": int(row[1]),
+            "user_id": int(row[2]),
+            "status": str(row[3] or "pending"),
+            "reviewed_by": int(row[4]) if row[4] else None,
+            "reviewed_at": str(row[5]) if row[5] else None,
+            "review_note": str(row[6]) if row[6] else None,
+            "created_at": str(row[7]),
+        }
+
     def _event_from_row(self, row) -> dict | None:
         if not row:
             return None
@@ -219,10 +233,11 @@ class DebattenService:
             "started_by": int(row[8]) if row[8] else None,
             "ended_by": int(row[9]) if row[9] else None,
             "podium_message_id": int(row[10]) if row[10] else None,
-            "speaker_snapshot": self._decode_speaker_snapshot(row[11]),
-            "created_at": str(row[12]),
-            "topic_title": str(row[13]),
-            "topic_description": str(row[14]),
+            "stage_channel_id": int(row[11]) if row[11] else None,
+            "speaker_snapshot": self._decode_speaker_snapshot(row[12]),
+            "created_at": str(row[13]),
+            "topic_title": str(row[14]),
+            "topic_description": str(row[15]),
         }
 
     async def _guild_state(self, guild_id: int) -> dict:
@@ -263,6 +278,17 @@ class DebattenService:
                 channel = None
         return channel if isinstance(channel, discord.TextChannel) else None
 
+    async def _get_stage_channel(self, guild: discord.Guild, channel_id: int) -> discord.StageChannel | None:
+        if not channel_id:
+            return None
+        channel = guild.get_channel(int(channel_id))
+        if not channel:
+            try:
+                channel = await guild.fetch_channel(int(channel_id))
+            except Exception:
+                channel = None
+        return channel if isinstance(channel, discord.StageChannel) else None
+
     async def _get_member(self, guild: discord.Guild, user_id: int) -> discord.Member | None:
         member = guild.get_member(int(user_id))
         if member:
@@ -293,11 +319,18 @@ class DebattenService:
             )
         return out
 
-    async def _speaker_snapshot_from_registrations(self, guild: discord.Guild, event_id: int) -> list[dict]:
-        rows = await self.db.list_debate_registrations(event_id)
+    async def _speaker_snapshot_from_registrations(
+        self,
+        guild: discord.Guild,
+        event_id: int,
+        *,
+        status: str | None = None,
+    ) -> list[dict]:
+        rows = await self.db.list_debate_registrations(event_id, status=status)
         members: list[discord.Member] = []
         for row in rows or []:
-            user_id = int(row[2] or 0)
+            registration = self._registration_from_row(row)
+            user_id = int((registration or {}).get("user_id") or 0)
             if not user_id:
                 continue
             member = await self._get_member(guild, user_id)
@@ -305,9 +338,9 @@ class DebattenService:
                 members.append(member)
         return await self._speaker_snapshot_from_members(members)
 
-    def _preview_names(self, snapshot: list[dict]) -> str:
+    def _preview_names(self, snapshot: list[dict], *, empty_text: str = "Noch niemand angemeldet.") -> str:
         if not snapshot:
-            return "Noch niemand angemeldet."
+            return empty_text
         parts: list[str] = []
         for item in snapshot[:4]:
             name = self._clean_text(str(item.get("name") or "User"))
@@ -317,26 +350,157 @@ class DebattenService:
             parts.append(f"+{len(snapshot) - 4}")
         return ", ".join(parts)
 
+    def _merge_members(self, *groups: list[discord.Member]) -> list[discord.Member]:
+        merged: list[discord.Member] = []
+        seen: set[int] = set()
+        for group in groups:
+            for member in list(group or []):
+                if not isinstance(member, discord.Member):
+                    continue
+                if int(member.id) in seen:
+                    continue
+                seen.add(int(member.id))
+                merged.append(member)
+        return merged
+
+    def _stage_channel_name(self, title: str) -> str:
+        clean = self._clean_text(title)
+        clean = re.sub(r"[^0-9A-Za-zÄÖÜäöüß \-•]", "", clean).strip()
+        if not clean:
+            clean = "BKT-Debatte"
+        return f"🎙️・{clean[:80]}"
+
+    def _stage_topic(self, title: str) -> str:
+        clean = self._clean_text(title)
+        return clean[:120] if clean else "BKT-Debatte"
+
+    async def _apply_stage_permissions(self, stage_channel: discord.StageChannel, members: list[discord.Member], *, reason: str):
+        for member in members:
+            try:
+                overwrite = stage_channel.overwrites_for(member)
+                overwrite.view_channel = True
+                overwrite.connect = True
+                overwrite.speak = True
+                await stage_channel.set_permissions(member, overwrite=overwrite, reason=reason)
+            except Exception:
+                continue
+
+    async def _promote_stage_speaker(self, stage_channel: discord.StageChannel, member: discord.Member):
+        if not member.voice or not member.voice.channel or int(member.voice.channel.id) != int(stage_channel.id):
+            return
+        try:
+            await member.edit(suppress=False)
+        except Exception:
+            pass
+
+    async def _promote_stage_speakers(self, stage_channel: discord.StageChannel, members: list[discord.Member]):
+        for member in members:
+            if member.voice and member.voice.channel and int(member.voice.channel.id) != int(stage_channel.id):
+                try:
+                    await member.move_to(stage_channel, reason="BKT-Debatte gestartet")
+                except Exception:
+                    pass
+            await self._promote_stage_speaker(stage_channel, member)
+
+    async def _create_stage_channel(
+        self,
+        guild: discord.Guild,
+        podium_channel: discord.TextChannel,
+        event: dict,
+        speaker_members: list[discord.Member],
+    ) -> discord.StageChannel:
+        overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
+            guild.default_role: discord.PermissionOverwrite(
+                view_channel=True,
+                connect=True,
+                speak=False,
+            )
+        }
+        me = guild.me
+        if me:
+            overwrites[me] = discord.PermissionOverwrite(
+                view_channel=True,
+                connect=True,
+                speak=True,
+                manage_channels=True,
+                mute_members=True,
+                move_members=True,
+            )
+        for member in speaker_members:
+            overwrites[member] = discord.PermissionOverwrite(
+                view_channel=True,
+                connect=True,
+                speak=True,
+            )
+        stage_channel = await guild.create_stage_channel(
+            name=self._stage_channel_name(str(event.get("topic_title") or "")),
+            category=podium_channel.category,
+            overwrites=overwrites,
+            reason=f"BKT-Debatte #{int(event.get('id') or 0)}",
+        )
+        try:
+            await stage_channel.create_instance(
+                topic=self._stage_topic(str(event.get("topic_title") or "")),
+                privacy_level=discord.PrivacyLevel.guild_only,
+                reason=f"BKT-Debatte #{int(event.get('id') or 0)}",
+            )
+        except Exception:
+            try:
+                await stage_channel.delete(reason="Stage-Instanz konnte nicht erstellt werden")
+            except Exception:
+                pass
+            raise
+        await self._apply_stage_permissions(stage_channel, speaker_members, reason="BKT-Debatte Sprecher bestätigt")
+        await self._promote_stage_speakers(stage_channel, speaker_members)
+        return stage_channel
+
+    async def _live_stage_speakers(self, guild: discord.Guild, event: dict) -> list[discord.Member]:
+        stage_channel = await self._get_stage_channel(guild, int(event.get("stage_channel_id") or 0))
+        if not stage_channel:
+            return []
+        members: list[discord.Member] = []
+        for member in list(stage_channel.members or []):
+            if member.bot:
+                continue
+            voice_state = getattr(member, "voice", None)
+            if not voice_state or int(getattr(getattr(voice_state, "channel", None), "id", 0) or 0) != int(stage_channel.id):
+                continue
+            if bool(getattr(voice_state, "suppress", False)):
+                continue
+            members.append(member)
+        return members
+
     async def _panel_state(self, guild: discord.Guild) -> dict:
         state = await self._guild_state(guild.id)
         next_event = self._event_from_row(await self.db.get_next_planned_debate_event(guild.id))
         live_event = self._event_from_row(await self.db.get_live_debate_event(guild.id))
         next_registration_snapshot: list[dict] = []
         next_registration_count = 0
+        next_pending_count = 0
         if next_event:
-            next_registration_snapshot = await self._speaker_snapshot_from_registrations(guild, int(next_event["id"]))
+            next_registration_snapshot = await self._speaker_snapshot_from_registrations(
+                guild,
+                int(next_event["id"]),
+                status="accepted",
+            )
             next_registration_count = len(next_registration_snapshot)
+            next_pending_count = await self.db.count_debate_registrations(int(next_event["id"]), status="pending")
         return {
             "panel_channel_id": int(state.get("panel_channel_id") or 0),
             "podium_channel_id": int(state.get("podium_channel_id") or 0),
             "next_event": next_event,
             "live_event": live_event,
             "next_registration_count": next_registration_count,
-            "next_registration_preview": self._preview_names(next_registration_snapshot),
+            "next_pending_signup_count": next_pending_count,
+            "next_registration_preview": self._preview_names(
+                next_registration_snapshot,
+                empty_text="Noch keine Sprecher bestätigt.",
+            ),
             "pending_topic_count": await self.db.count_debate_topics(guild.id, status="pending"),
             "approved_topic_count": await self.db.count_debate_topics(guild.id, status="approved"),
             "finished_event_count": await self.db.count_debate_events(guild.id, status="finished"),
             "live_speaker_count": len(list((live_event or {}).get("speaker_snapshot") or [])),
+            "live_stage_mention": self._channel_mention(guild, int((live_event or {}).get("stage_channel_id") or 0)),
             "podium_mention": self._channel_mention(guild, int(state.get("podium_channel_id") or 0)),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -385,12 +549,14 @@ class DebattenService:
                 "scheduled_for": str((state.get("next_event") or {}).get("scheduled_for") or ""),
                 "title": str((state.get("next_event") or {}).get("topic_title") or ""),
                 "registrations": int(state.get("next_registration_count") or 0),
+                "pending_signups": int(state.get("next_pending_signup_count") or 0),
                 "preview": str(state.get("next_registration_preview") or ""),
             },
             "live_event": {
                 "id": int((state.get("live_event") or {}).get("id") or 0),
                 "started_at": str((state.get("live_event") or {}).get("started_at") or ""),
                 "title": str((state.get("live_event") or {}).get("topic_title") or ""),
+                "stage_channel_id": int((state.get("live_event") or {}).get("stage_channel_id") or 0),
                 "speakers": list((state.get("live_event") or {}).get("speaker_snapshot") or []),
             },
             "counts": {
@@ -399,6 +565,7 @@ class DebattenService:
                 "finished": int(state.get("finished_event_count") or 0),
             },
             "podium": str(state.get("podium_mention") or ""),
+            "live_stage": str(state.get("live_stage_mention") or ""),
         }
         return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
@@ -519,11 +686,6 @@ class DebattenService:
             return await _ephemeral(interaction, "Bitte gib ein etwas klareres Thema an.")
         if len(clean_description) < 20:
             return await _ephemeral(interaction, "Bitte beschreibe das Thema etwas ausführlicher.")
-        if not self._is_political_topic(clean_title, clean_description):
-            return await _ephemeral(
-                interaction,
-                "Es sind nur politische Debattenthemen erlaubt. Bitte formuliere das Thema klar politisch.",
-            )
         if not interaction.response.is_done():
             try:
                 await interaction.response.defer(ephemeral=True, thinking=True)
@@ -553,7 +715,10 @@ class DebattenService:
             ),
         )
         await self.refresh_panel(interaction.guild, force=True)
-        await _ephemeral(interaction, f"Dein Thema wurde eingereicht. Themen-ID: `#{topic_id}`.")
+        await _ephemeral(
+            interaction,
+            f"Dein Thema wurde eingereicht. Themen-ID: `#{topic_id}`. Bitte reiche weiterhin nur politische Debattenthemen ein.",
+        )
 
     async def create_official_topic(
         self,
@@ -565,8 +730,6 @@ class DebattenService:
     ) -> int:
         clean_title = self._clean_text(title)
         clean_description = self._clean_text(description)
-        if not self._is_political_topic(clean_title, clean_description):
-            raise ValueError("Es sind nur politische Debattenthemen erlaubt.")
         topic_id = await self.db.create_debate_topic(
             guild.id,
             clean_title,
@@ -675,7 +838,9 @@ class DebattenService:
             event = self._event_from_row(await self.db.get_next_planned_debate_event(interaction.guild.id))
             if not event:
                 return await _ephemeral(interaction, "Aktuell ist noch keine nächste Debatte geplant.")
-            existing = await self.db.get_debate_registration(int(event["id"]), int(interaction.user.id))
+            existing = self._registration_from_row(
+                await self.db.get_debate_registration(int(event["id"]), int(interaction.user.id))
+            )
             joined = not bool(existing)
             if joined:
                 await self.db.create_debate_registration(int(event["id"]), interaction.guild.id, int(interaction.user.id))
@@ -688,6 +853,7 @@ class DebattenService:
                 interaction.guild,
                 {
                     "joined": joined,
+                    "status_label": "Offen" if joined else "Entfernt",
                     "display_name": interaction.user.display_name,
                     "user_id": int(interaction.user.id),
                     "topic_title": event["topic_title"],
@@ -700,6 +866,61 @@ class DebattenService:
         if joined:
             return await _ephemeral(interaction, f"Du bist jetzt für **{event['topic_title']}** angemeldet.")
         return await _ephemeral(interaction, f"Deine Anmeldung für **{event['topic_title']}** wurde entfernt.")
+
+    async def set_signup_status(
+        self,
+        guild: discord.Guild,
+        actor: discord.Member,
+        *,
+        event_id: int,
+        member: discord.Member,
+        status: str,
+        review_note: str | None = None,
+    ) -> tuple[bool, str]:
+        event = self._event_from_row(await self.db.get_debate_event(event_id))
+        if not event or int(event["guild_id"]) != int(guild.id):
+            return False, "Debatte nicht gefunden."
+        registration = self._registration_from_row(await self.db.get_debate_registration(int(event_id), int(member.id)))
+        if not registration:
+            return False, "Für diesen User liegt keine Anmeldung vor."
+        if str(registration.get("status") or "pending") == str(status):
+            return False, "Dieser Anmeldestatus ist bereits gesetzt."
+        updated = await self.db.set_debate_registration_status(
+            int(event_id),
+            int(member.id),
+            str(status),
+            reviewed_by=int(actor.id),
+            review_note=review_note,
+        )
+        if updated <= 0:
+            return False, "Die Anmeldung konnte nicht aktualisiert werden."
+        status_label = "Angenommen" if status == "accepted" else "Abgelehnt"
+        await self._notify_review_channel(
+            guild,
+            build_signup_review_embed(
+                self.settings,
+                guild,
+                {
+                    "joined": True,
+                    "status_label": status_label,
+                    "display_name": member.display_name,
+                    "user_id": int(member.id),
+                    "topic_title": event["topic_title"],
+                    "scheduled_for": event["scheduled_for"],
+                    "event_id": int(event["id"]),
+                    "review_note": review_note,
+                    "reviewed_by": int(actor.id),
+                },
+            ),
+        )
+        live_event = self._event_from_row(await self.db.get_live_debate_event(guild.id))
+        if status == "accepted" and live_event and int(live_event["id"]) == int(event_id):
+            stage_channel = await self._get_stage_channel(guild, int(live_event.get("stage_channel_id") or 0))
+            if stage_channel:
+                await self._apply_stage_permissions(stage_channel, [member], reason="BKT-Debatte Sprecher angenommen")
+                await self._promote_stage_speaker(stage_channel, member)
+        await self.refresh_panel(guild, force=True)
+        return True, f"Anmeldung von {member.mention} für Debatte `#{int(event['id'])}` wurde auf **{status_label}** gesetzt."
 
     async def start_debate(
         self,
@@ -723,25 +944,47 @@ class DebattenService:
             podium_channel = await self._get_text_channel(guild, int(state.get("podium_channel_id") or 0))
             if not podium_channel:
                 return False, "Kein Podium-Channel konfiguriert."
-            speaker_members = [member for member in list(speakers or []) if isinstance(member, discord.Member)]
-            speaker_snapshot = (
-                await self._speaker_snapshot_from_members(speaker_members)
-                if speaker_members
-                else await self._speaker_snapshot_from_registrations(guild, int(event["id"]))
-            )
+            approved_rows = await self.db.list_debate_registrations(int(event["id"]), status="accepted")
+            approved_members: list[discord.Member] = []
+            for row in approved_rows or []:
+                registration = self._registration_from_row(row)
+                user_id = int((registration or {}).get("user_id") or 0)
+                if not user_id:
+                    continue
+                member = await self._get_member(guild, user_id)
+                if member:
+                    approved_members.append(member)
+            manual_members = [member for member in list(speakers or []) if isinstance(member, discord.Member)]
+            speaker_members = self._merge_members(approved_members, manual_members)
+            if not speaker_members:
+                return False, "Es wurden noch keine Sprecher angenommen. Bestätige erst Anmeldungen oder gib Sprecher direkt mit an."
+            speaker_snapshot = await self._speaker_snapshot_from_members(speaker_members)
             started_at = datetime.now(timezone.utc).isoformat()
             event["started_at"] = started_at
             event["speaker_snapshot"] = speaker_snapshot
-            message = await podium_channel.send(embed=build_podium_embed(self.settings, guild, event, live=True))
+            try:
+                stage_channel = await self._create_stage_channel(guild, podium_channel, event, speaker_members)
+            except Exception:
+                return False, "Die Stage für die Debatte konnte nicht erstellt werden."
+            event["stage_channel_id"] = int(stage_channel.id)
+            try:
+                message = await podium_channel.send(embed=build_podium_embed(self.settings, guild, event, live=True))
+            except Exception:
+                try:
+                    await stage_channel.delete(reason="Debatten-Start abgebrochen")
+                except Exception:
+                    pass
+                return False, "Die Debatten-Nachricht im Podium konnte nicht gesendet werden."
             await self.db.mark_debate_event_live(
                 int(event["id"]),
                 int(actor.id),
                 started_at,
                 int(message.id),
+                int(stage_channel.id),
                 json.dumps(speaker_snapshot, ensure_ascii=False),
             )
         await self.refresh_panel(guild, force=True)
-        return True, f"Debatte `#{int(event['id'])}` wurde im Podium gestartet."
+        return True, f"Debatte `#{int(event['id'])}` wurde gestartet. Stage: {self._channel_mention(guild, int(event.get('stage_channel_id') or 0))}"
 
     async def end_debate(self, guild: discord.Guild, actor: discord.Member) -> tuple[bool, str]:
         async with self._guild_lock(guild.id):
@@ -754,7 +997,16 @@ class DebattenService:
             ended_at_dt = datetime.now(timezone.utc)
             duration_seconds = max(0, int((ended_at_dt - started_at).total_seconds()))
             ended_at = ended_at_dt.isoformat()
-            await self.db.finish_debate_event(int(event["id"]), int(actor.id), ended_at, duration_seconds)
+            live_speakers = await self._live_stage_speakers(guild, event)
+            if live_speakers:
+                event["speaker_snapshot"] = await self._speaker_snapshot_from_members(live_speakers)
+            await self.db.finish_debate_event(
+                int(event["id"]),
+                int(actor.id),
+                ended_at,
+                duration_seconds,
+                json.dumps(list(event.get("speaker_snapshot") or []), ensure_ascii=False),
+            )
             event["ended_at"] = ended_at
             event["duration_seconds"] = duration_seconds
             state = await self._guild_state(guild.id)
@@ -765,8 +1017,36 @@ class DebattenService:
                     await message.edit(embed=build_podium_embed(self.settings, guild, event, live=False))
                 except Exception:
                     pass
+            stage_channel = await self._get_stage_channel(guild, int(event.get("stage_channel_id") or 0))
+            if stage_channel:
+                try:
+                    await stage_channel.delete(reason=f"BKT-Debatte #{int(event['id'])} beendet")
+                except Exception:
+                    pass
         await self.refresh_panel(guild, force=True)
         return True, f"Debatte `#{int(event['id'])}` wurde beendet."
+
+    async def handle_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ):
+        if member.bot or not member.guild:
+            return
+        stage_channel = after.channel if isinstance(after.channel, discord.StageChannel) else None
+        if not stage_channel:
+            return
+        event = self._event_from_row(await self.db.get_live_debate_event(member.guild.id))
+        if not event:
+            return
+        if int(event.get("stage_channel_id") or 0) != int(stage_channel.id):
+            return
+        speaker_ids = {int(item.get("user_id") or 0) for item in list(event.get("speaker_snapshot") or [])}
+        if int(member.id) not in speaker_ids:
+            return
+        await self._apply_stage_permissions(stage_channel, [member], reason="BKT-Debatte Sprecher beigetreten")
+        await self._promote_stage_speaker(stage_channel, member)
 
     async def archive_embed(self, guild: discord.Guild | None, event_id: int) -> discord.Embed:
         if not guild:

@@ -29,21 +29,21 @@ async def _send_ephemeral(
 
 class DebateTopicSubmitModal(discord.ui.Modal):
     def __init__(self, service):
-        super().__init__(title="Politisches Debattenthema einreichen")
+        super().__init__(title="Debattenthema einreichen")
         self.service = service
         self.title_input = discord.ui.TextInput(
             label="Thema",
             style=discord.TextStyle.short,
             required=True,
             max_length=120,
-            placeholder="z. B. Sollte die Schuldenbremse reformiert werden?",
+            placeholder="Bitte nur politische Themen, z. B. Sollte die Schuldenbremse reformiert werden?",
         )
         self.description_input = discord.ui.TextInput(
             label="Beschreibung",
             style=discord.TextStyle.paragraph,
             required=True,
             max_length=1000,
-            placeholder="Beschreibe kurz, worüber debattiert werden soll und warum es politisch relevant ist.",
+            placeholder="Beschreibe kurz, worüber debattiert werden soll. Reiche bitte nur politische Debattenthemen ein.",
         )
         self.add_item(self.title_input)
         self.add_item(self.description_input)

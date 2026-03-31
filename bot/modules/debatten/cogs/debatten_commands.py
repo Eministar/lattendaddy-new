@@ -46,7 +46,7 @@ class DebattenCommands(commands.Cog):
     @app_commands.describe(
         panel_channel="Channel mit dem Debatten-Panel",
         review_channel="Channel für Anmeldungen und Themeneinsendungen",
-        podium_channel="Channel für laufende Debatten",
+        podium_channel="Textchannel für Debatten-Infos; die Stage wird dort automatisch erzeugt",
     )
     async def setup(
         self,
@@ -85,8 +85,8 @@ class DebattenCommands(commands.Cog):
         await self.service.refresh_panel(interaction.guild, force=True)
         await _ephemeral(interaction, "Das Debatten-Panel wurde aktualisiert.")
 
-    @debatte.command(name="thema-festlegen", description="✅ 𑁉 Bestätigtes politisches Thema direkt anlegen")
-    @app_commands.describe(title="Politisches Debattenthema", description="Kurze Beschreibung des Themas")
+    @debatte.command(name="thema-festlegen", description="✅ 𑁉 Bestätigtes Debattenthema direkt anlegen")
+    @app_commands.describe(title="Debattenthema", description="Kurze Beschreibung des Themas")
     async def thema_festlegen(self, interaction: discord.Interaction, title: str, description: str):
         if not self._need_member(interaction):
             return
@@ -173,6 +173,56 @@ class DebattenCommands(commands.Cog):
             interaction.user,
             topic_id=int(topic_id),
             scheduled_for_raw=datum,
+        )
+        await _ephemeral(interaction, msg)
+
+    @debatte.command(name="anmeldung-annehmen", description="🟢 𑁉 Sprecher-Anmeldung annehmen")
+    @app_commands.describe(event_id="Debatten-ID", user="Angemeldeter User", note="Optionale interne Notiz")
+    async def anmeldung_annehmen(
+        self,
+        interaction: discord.Interaction,
+        event_id: int,
+        user: discord.Member,
+        note: str | None = None,
+    ):
+        if not self._need_member(interaction):
+            return
+        err = self.permission_service.action_error(interaction.user, "debate_signup_approve")
+        if err:
+            return await _ephemeral(interaction, err)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        ok, msg = await self.service.set_signup_status(
+            interaction.guild,
+            interaction.user,
+            event_id=int(event_id),
+            member=user,
+            status="accepted",
+            review_note=note,
+        )
+        await _ephemeral(interaction, msg)
+
+    @debatte.command(name="anmeldung-ablehnen", description="🔴 𑁉 Sprecher-Anmeldung ablehnen")
+    @app_commands.describe(event_id="Debatten-ID", user="Angemeldeter User", note="Optionale Begründung")
+    async def anmeldung_ablehnen(
+        self,
+        interaction: discord.Interaction,
+        event_id: int,
+        user: discord.Member,
+        note: str | None = None,
+    ):
+        if not self._need_member(interaction):
+            return
+        err = self.permission_service.action_error(interaction.user, "debate_signup_reject")
+        if err:
+            return await _ephemeral(interaction, err)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        ok, msg = await self.service.set_signup_status(
+            interaction.guild,
+            interaction.user,
+            event_id=int(event_id),
+            member=user,
+            status="rejected",
+            review_note=note,
         )
         await _ephemeral(interaction, msg)
 
