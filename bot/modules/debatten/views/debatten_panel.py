@@ -21,8 +21,13 @@ async def _send_ephemeral(
     try:
         if not interaction.response.is_done():
             await interaction.response.send_message(content=text, embed=embed, ephemeral=True, delete_after=30)
-        else:
-            await interaction.followup.send(content=text, embed=embed, ephemeral=True, delete_after=30)
+            return
+        try:
+            await interaction.edit_original_response(content=text, embed=embed)
+            return
+        except Exception:
+            pass
+        await interaction.followup.send(content=text, embed=embed, ephemeral=True, delete_after=30)
     except Exception:
         pass
 

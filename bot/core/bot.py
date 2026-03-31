@@ -66,6 +66,7 @@ from bot.modules.debatten.services.debatten_service import DebattenService
 from bot.modules.debatten.cogs.debatten_commands import DebattenCommands
 from bot.modules.debatten.cogs.debatten_listener import DebattenListener
 from bot.modules.debatten.views.debatten_panel import DebattenPanelView
+from bot.modules.debatten.views.topic_review import DebattenTopicDecisionButton
 from bot.modules.wort_zum_sonntag.cogs.wort_commands import WortCommands
 from bot.modules.wort_zum_sonntag.services.wort_service import WortZumSonntagService
 from bot.modules.wort_zum_sonntag.views.panel import WortPanelView
@@ -268,6 +269,7 @@ class StarryBot(commands.Bot):
         self.add_view(TicketConfirmView(self.ticket_service, include_container=False))
         self.add_dynamic_items(RatingButton)
         self.add_dynamic_items(ApplicationDecisionButton)
+        self.add_dynamic_items(DebattenTopicDecisionButton)
         self.add_view(ApplicationPanelView(self.settings))
         self.add_view(SupportPanelView(self.settings))
         self.add_view(RolesInfoPanelView(self.settings))

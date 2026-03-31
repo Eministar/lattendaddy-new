@@ -101,8 +101,13 @@ async def _ephemeral(
     try:
         if not interaction.response.is_done():
             await interaction.response.send_message(content=text, embed=embed, ephemeral=True, delete_after=30)
-        else:
-            await interaction.followup.send(content=text, embed=embed, ephemeral=True, delete_after=30)
+            return
+        try:
+            await interaction.edit_original_response(content=text, embed=embed)
+            return
+        except Exception:
+            pass
+        await interaction.followup.send(content=text, embed=embed, ephemeral=True, delete_after=30)
     except Exception:
         pass
 
@@ -687,13 +692,46 @@ class DebattenService:
     async def tick(self):
         await self.refresh_all_panels()
 
-    async def _notify_review_channel(self, guild: discord.Guild, embed: discord.Embed):
+    async def _notify_review_channel(
+        self,
+        guild: discord.Guild,
+        embed: discord.Embed,
+        *,
+        view: discord.ui.View | discord.ui.LayoutView | None = None,
+    ):
         state = await self._guild_state(guild.id)
         channel = await self._get_text_channel(guild, int(state.get("review_channel_id") or 0))
         if not channel:
             return
         try:
-            await channel.send(embed=embed)
+            await channel.send(embed=embed, view=view)
+        except Exception:
+            pass
+
+    async def _post_submit_topic(self, guild: discord.Guild, topic_id: int, user_id: int, title: str, description: str):
+        try:
+            from bot.modules.debatten.views.topic_review import DebattenTopicReviewView
+
+            await self._notify_review_channel(
+                guild,
+                build_topic_review_embed(
+                    self.settings,
+                    guild,
+                    {
+                        "topic_id": topic_id,
+                        "title": title,
+                        "description": description,
+                        "status_label": "Offen",
+                        "user_id": user_id,
+                        "source_label": "Panel",
+                    },
+                ),
+                view=DebattenTopicReviewView(int(topic_id)),
+            )
+        except Exception:
+            pass
+        try:
+            await self.refresh_panel(guild, force=True)
         except Exception:
             pass
 
@@ -706,11 +744,7 @@ class DebattenService:
             return await _ephemeral(interaction, "Bitte gib ein etwas klareres Thema an.")
         if len(clean_description) < 20:
             return await _ephemeral(interaction, "Bitte beschreibe das Thema etwas ausführlicher.")
-        if not interaction.response.is_done():
-            try:
-                await interaction.response.defer(ephemeral=True, thinking=True)
-            except Exception:
-                pass
+        await _ephemeral(interaction, "Thema wird eingereicht …")
         topic_id = await self.db.create_debate_topic(
             interaction.guild.id,
             clean_title,
@@ -719,25 +753,18 @@ class DebattenService:
             status="pending",
             created_via="panel",
         )
-        await self._notify_review_channel(
-            interaction.guild,
-            build_topic_review_embed(
-                self.settings,
-                interaction.guild,
-                {
-                    "topic_id": topic_id,
-                    "title": clean_title,
-                    "description": clean_description,
-                    "status_label": "Offen",
-                    "user_id": int(interaction.user.id),
-                    "source_label": "Panel",
-                },
-            ),
-        )
-        await self.refresh_panel(interaction.guild, force=True)
         await _ephemeral(
             interaction,
             f"Dein Thema wurde eingereicht. Themen-ID: `#{topic_id}`. Bitte reiche weiterhin nur politische Debattenthemen ein.",
+        )
+        asyncio.create_task(
+            self._post_submit_topic(
+                interaction.guild,
+                int(topic_id),
+                int(interaction.user.id),
+                clean_title,
+                clean_description,
+            )
         )
 
     async def create_official_topic(
@@ -787,6 +814,7 @@ class DebattenService:
         topic_id: int,
         status: str,
         review_note: str | None = None,
+        announce: bool = True,
     ) -> tuple[bool, str]:
         topic = self._topic_from_row(await self.db.get_debate_topic(topic_id))
         if not topic or int(topic["guild_id"]) != int(guild.id):
@@ -800,22 +828,23 @@ class DebattenService:
             review_note=review_note,
         )
         label = "Bestätigt" if status == "approved" else "Abgelehnt"
-        await self._notify_review_channel(
-            guild,
-            build_topic_review_embed(
-                self.settings,
+        if announce:
+            await self._notify_review_channel(
                 guild,
-                {
-                    "topic_id": int(topic["id"]),
-                    "title": topic["title"],
-                    "description": topic["description"],
-                    "status_label": label,
-                    "user_id": int(topic["submitted_by"]),
-                    "source_label": "Review",
-                    "review_note": review_note,
-                },
-            ),
-        )
+                build_topic_review_embed(
+                    self.settings,
+                    guild,
+                    {
+                        "topic_id": int(topic["id"]),
+                        "title": topic["title"],
+                        "description": topic["description"],
+                        "status_label": label,
+                        "user_id": int(topic["submitted_by"]),
+                        "source_label": "Review",
+                        "review_note": review_note,
+                    },
+                ),
+            )
         await self.refresh_panel(guild, force=True)
         return True, f"Thema `#{int(topic['id'])}` wurde auf **{label}** gesetzt."
 
@@ -849,11 +878,7 @@ class DebattenService:
     async def toggle_signup(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await _ephemeral(interaction, "Nur im Server nutzbar.")
-        if not interaction.response.is_done():
-            try:
-                await interaction.response.defer(ephemeral=True, thinking=False)
-            except Exception:
-                pass
+        await _ephemeral(interaction, "Anmeldung wird aktualisiert …")
         async with self._guild_lock(interaction.guild.id):
             event = self._event_from_row(await self.db.get_next_planned_debate_event(interaction.guild.id))
             if not event:
