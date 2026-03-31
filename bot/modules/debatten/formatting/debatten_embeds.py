@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import discord
 from discord.utils import format_dt
+from bot.utils.emojis import em
 
 
 def _color(settings, guild: discord.Guild | None) -> int:
@@ -87,46 +88,49 @@ def build_notice_embed(
 
 
 def build_panel_embed(settings, guild: discord.Guild | None, state: dict) -> discord.Embed:
+    arrow2 = em(settings, "arrow2", guild) or "»"
+    info = em(settings, "info", guild) or "ℹ️"
     next_event = state.get("next_event") or {}
     live_event = state.get("live_event") or {}
-    next_value = "Aktuell ist noch keine Debatte geplant."
+    next_value = "┗`🗓️` - Aktuell ist noch keine Debatte geplant."
     if next_event:
         next_value = (
-            f"**{next_event.get('topic_title', 'Unbekanntes Thema')}**\n"
-            f"• Termin: {_fmt_dt(next_event.get('scheduled_for'), 'F')} ({_fmt_dt(next_event.get('scheduled_for'), 'R')})\n"
-            f"• Bestätigte Sprecher: **{int(state.get('next_registration_count', 0) or 0)}**\n"
-            f"• Offene Anmeldungen: **{int(state.get('next_pending_signup_count', 0) or 0)}**\n"
-            f"• Vorschau: {state.get('next_registration_preview', 'Noch keine Sprecher bestätigt.')}"
+            f"┏`🧠` - Thema: **{next_event.get('topic_title', 'Unbekanntes Thema')}**\n"
+            f"┣`🗓️` - Termin: {_fmt_dt(next_event.get('scheduled_for'), 'F')} ({_fmt_dt(next_event.get('scheduled_for'), 'R')})\n"
+            f"┣`🎤` - Bestätigte Sprecher: **{int(state.get('next_registration_count', 0) or 0)}**\n"
+            f"┣`📥` - Offene Anmeldungen: **{int(state.get('next_pending_signup_count', 0) or 0)}**\n"
+            f"┗`👥` - Vorschau: {state.get('next_registration_preview', 'Noch keine Sprecher bestätigt.')}"
         )
 
-    live_value = "Derzeit läuft keine Debatte."
+    live_value = "┗`📡` - Derzeit läuft keine Debatte."
     if live_event:
         live_value = (
-            f"**{live_event.get('topic_title', 'Unbekanntes Thema')}**\n"
-            f"• Start: {_fmt_dt(live_event.get('started_at'), 'F')} ({_fmt_dt(live_event.get('started_at'), 'R')})\n"
-            f"• Sprecher: **{int(state.get('live_speaker_count', 0) or 0)}**\n"
-            f"• Stage: {state.get('live_stage_mention', 'Nicht gesetzt')}\n"
-            f"• Podium: {state.get('podium_mention', 'Nicht gesetzt')}"
+            f"┏`🧠` - Thema: **{live_event.get('topic_title', 'Unbekanntes Thema')}**\n"
+            f"┣`⏱️` - Start: {_fmt_dt(live_event.get('started_at'), 'F')} ({_fmt_dt(live_event.get('started_at'), 'R')})\n"
+            f"┣`🎤` - Sprecher: **{int(state.get('live_speaker_count', 0) or 0)}**\n"
+            f"┣`🎙️` - Stage: {state.get('live_stage_mention', 'Nicht gesetzt')}\n"
+            f"┗`💬` - Podium: {state.get('podium_mention', 'Nicht gesetzt')}"
         )
 
     archive_value = (
-        f"• Offene Themen: **{int(state.get('pending_topic_count', 0) or 0)}**\n"
-        f"• Bestätigte Themen: **{int(state.get('approved_topic_count', 0) or 0)}**\n"
-        f"• Archivierte Debatten: **{int(state.get('finished_event_count', 0) or 0)}**\n"
-        f"• Über das Dropdown kannst du vergangene Debatten nachverfolgen."
+        f"┏`📥` - Offene Themen: **{int(state.get('pending_topic_count', 0) or 0)}**\n"
+        f"┣`✅` - Bestätigte Themen: **{int(state.get('approved_topic_count', 0) or 0)}**\n"
+        f"┣`🗂️` - Archivierte Debatten: **{int(state.get('finished_event_count', 0) or 0)}**\n"
+        f"┗`📚` - Archiv: Vergangene Debatten unten im Dropdown"
     )
 
     embed = discord.Embed(
-        title="🎙️ 𑁉 BKT-DEBATTEN",
+        title=f"{info} 𑁉 BKT-DEBATTEN",
         description=(
-            "Die BKT-Debatten sind moderierte politische Community-Debatten im typischen Starry-Stil. "
-            "Hier meldest du dich für die nächste Runde an, reichst Themen ein und verfolgst geplante wie vergangene Debatten."
+            f"{arrow2} Moderierte politische Community-Debatten im Starry-Design.\n"
+            f"{arrow2} Melde dich für die nächste Runde an, reiche Themen ein und verfolge geplante wie vergangene Debatten.\n"
+            f"{arrow2} Beim Start erstellt der Bot automatisch die Stage und schaltet angenommene Sprecher frei.\n\n"
+            f"**Nächste Debatte**\n{next_value}\n\n"
+            f"**Live-Status**\n{live_value}\n\n"
+            f"**Themen & Archiv**\n{archive_value}"
         ),
         color=_color(settings, guild),
     )
-    embed.add_field(name="Nächste Debatte", value=next_value, inline=False)
-    embed.add_field(name="Live-Status", value=live_value, inline=False)
-    embed.add_field(name="Themen & Archiv", value=archive_value, inline=False)
     updated_at = _parse_dt(state.get("updated_at"))
     if updated_at:
         embed.set_footer(text=f"Live aktualisiert • {updated_at.astimezone(timezone.utc).strftime('%d.%m.%Y %H:%M UTC')}")
@@ -134,17 +138,18 @@ def build_panel_embed(settings, guild: discord.Guild | None, state: dict) -> dis
 
 
 def build_signup_review_embed(settings, guild: discord.Guild | None, payload: dict) -> discord.Embed:
+    arrow2 = em(settings, "arrow2", guild) or "»"
     action = "angemeldet" if payload.get("joined") else "abgemeldet"
     status_label = str(payload.get("status_label") or ("Offen" if payload.get("joined") else "Entfernt"))
     embed = discord.Embed(
         title="🗳️ 𑁉 DEBATTEN-ANMELDUNG",
         description=(
-            f"**{payload.get('display_name', 'User')}** hat sich **{action}**.\n\n"
-            f"• User: <@{int(payload.get('user_id') or 0)}>\n"
-            f"• Debatte: **{payload.get('topic_title', 'Unbekannt')}**\n"
-            f"• Termin: {_fmt_dt(payload.get('scheduled_for'), 'F')}\n"
-            f"• Event-ID: **#{int(payload.get('event_id') or 0)}**\n"
-            f"• Status: **{status_label}**"
+            f"{arrow2} **{payload.get('display_name', 'User')}** hat sich **{action}**.\n\n"
+            f"┏`👤` - User: <@{int(payload.get('user_id') or 0)}>\n"
+            f"┣`🧠` - Debatte: **{payload.get('topic_title', 'Unbekannt')}**\n"
+            f"┣`🗓️` - Termin: {_fmt_dt(payload.get('scheduled_for'), 'F')}\n"
+            f"┣`🆔` - Event-ID: **#{int(payload.get('event_id') or 0)}**\n"
+            f"┗`📌` - Status: **{status_label}**"
         ),
         color=_color(settings, guild),
     )
@@ -158,9 +163,11 @@ def build_signup_review_embed(settings, guild: discord.Guild | None, payload: di
 
 
 def build_topic_review_embed(settings, guild: discord.Guild | None, payload: dict) -> discord.Embed:
+    arrow2 = em(settings, "arrow2", guild) or "»"
     embed = discord.Embed(
         title="🧠 𑁉 DEBATTEN-THEMA",
         description=(
+            f"{arrow2} Neues oder geprüftes Debattenthema.\n\n"
             f"**{payload.get('title', 'Ohne Titel')}**\n\n"
             f"{payload.get('description', '—')}"
         ),
@@ -169,10 +176,10 @@ def build_topic_review_embed(settings, guild: discord.Guild | None, payload: dic
     embed.add_field(
         name="Details",
         value=(
-            f"• Themen-ID: **#{int(payload.get('topic_id') or 0)}**\n"
-            f"• Status: **{payload.get('status_label', 'Offen')}**\n"
-            f"• Eingereicht von: <@{int(payload.get('user_id') or 0)}>\n"
-            f"• Quelle: **{payload.get('source_label', 'Panel')}**"
+            f"┏`🆔` - Themen-ID: **#{int(payload.get('topic_id') or 0)}**\n"
+            f"┣`📌` - Status: **{payload.get('status_label', 'Offen')}**\n"
+            f"┣`👤` - Eingereicht von: <@{int(payload.get('user_id') or 0)}>\n"
+            f"┗`📦` - Quelle: **{payload.get('source_label', 'Panel')}**"
         ),
         inline=False,
     )
@@ -183,6 +190,7 @@ def build_topic_review_embed(settings, guild: discord.Guild | None, payload: dic
 
 
 def build_podium_embed(settings, guild: discord.Guild | None, event: dict, *, live: bool) -> discord.Embed:
+    arrow2 = em(settings, "arrow2", guild) or "»"
     title = "🎙️ 𑁉 BKT-DEBATTE LIVE" if live else "🗂️ 𑁉 BKT-DEBATTE BEENDET"
     stage_channel_id = int(event.get("stage_channel_id") or 0)
     stage_mention = f"<#{stage_channel_id}>" if stage_channel_id else "Nicht aktiv"
@@ -198,6 +206,7 @@ def build_podium_embed(settings, guild: discord.Guild | None, event: dict, *, li
     embed = discord.Embed(
         title=title,
         description=(
+            f"{arrow2} {'Die Debatte läuft jetzt live auf der Stage.' if live else 'Die Debatte wurde beendet und archiviert.'}\n\n"
             f"**{event.get('topic_title', 'Unbekanntes Thema')}**\n\n"
             f"{event.get('topic_description', '—')}"
         ),
