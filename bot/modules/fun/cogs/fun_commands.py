@@ -2,6 +2,7 @@ import random
 import discord
 from discord import app_commands
 from discord.ext import commands
+from bot.modules.fun.formatting import build_avatar_view
 
 
 class FunCommands(commands.Cog):
@@ -77,6 +78,23 @@ class FunCommands(commands.Cog):
     async def eight_ball(self, interaction: discord.Interaction, question: str):
         answer = random.choice(_EIGHTBALL_ANSWERS)
         await interaction.response.send_message(f"🎱 **Frage:** {question}\n**Antwort:** {answer}")
+
+    @app_commands.command(name="avatar", description="🖼️ 𑁉 Banner und Profilfoto groß ansehen")
+    @app_commands.describe(user="Wessen Profilbild und Banner du ansehen willst")
+    async def avatar(self, interaction: discord.Interaction, user: discord.User | None = None):
+        target = user or interaction.user
+        member = interaction.guild.get_member(target.id) if interaction.guild else None
+        if isinstance(target, discord.Member):
+            member = target
+
+        subject: discord.User | discord.Member = target
+        try:
+            subject = await self.bot.fetch_user(target.id)
+        except Exception:
+            pass
+
+        view = build_avatar_view(self.bot.settings, interaction.guild, subject, member=member)
+        await interaction.response.send_message(view=view)
 
 
 def _build_action_message(
