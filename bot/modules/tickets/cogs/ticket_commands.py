@@ -34,9 +34,19 @@ class TicketCommands(commands.Cog):
             return await interaction.response.send_message(err, ephemeral=True)
         await interaction.response.send_message('Nutze bitte den Button "Ticket schließen" im Embed.', ephemeral=True)
 
+    @ticket.command(name="hinzufügen", description="➕ 𑁉 User zum Ticket hinzufügen")
+    @app_commands.describe(user="User, der zum Ticket hinzugefügt werden soll")
+    async def add(self, interaction: discord.Interaction, user: discord.Member):
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        err = self.permission_service.action_error(interaction.user, "ticket_add")
+        if err:
+            return await interaction.response.send_message(err, ephemeral=True)
+        await self.service.add_participant(interaction, user)
+
     @app_commands.command(name="ticket-add", description="➕ 𑁉 User zum Ticket hinzufügen")
     @app_commands.describe(user="User, der zum Ticket hinzugefügt werden soll")
-    async def ticket_add(self, interaction: discord.Interaction, user: discord.User):
+    async def ticket_add(self, interaction: discord.Interaction, user: discord.Member):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
         err = self.permission_service.action_error(interaction.user, "ticket_add")

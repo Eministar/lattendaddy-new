@@ -156,9 +156,27 @@ class CategorySelect(discord.ui.Select):
         await self.service.change_category(interaction, value)
 
 
+class ParticipantSelect(discord.ui.UserSelect):
+    def __init__(self, service):
+        self.service = service
+        super().__init__(
+            placeholder="Teilnehmer hinzufügen…",
+            min_values=1,
+            max_values=1,
+            custom_id="starry:ticket_add",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        user = self.values[0] if self.values else None
+        if not user:
+            return await interaction.response.send_message("Kein User ausgewählt.", ephemeral=True)
+        await self.service.add_participant(interaction, user)
+
+
 class SummaryView(discord.ui.LayoutView):
     ACTION_BY_CUSTOM_ID = {
         "starry:ticket_claim": "ticket_claim",
+        "starry:ticket_add": "ticket_add",
         "starry:ticket_note": "ticket_note",
         "starry:ticket_close": "ticket_close",
         "starry:ticket_reopen": "ticket_reopen",
@@ -237,6 +255,7 @@ class SummaryView(discord.ui.LayoutView):
         self.select_priority = PrioritySelect(self.service)
         self.select_status = StatusSelect(self.service)
         self.select_category = CategorySelect(self.service)
+        self.select_participant = ParticipantSelect(self.service)
 
         row_main = discord.ui.ActionRow()
         row_main.add_item(self.btn_claim)
@@ -247,6 +266,9 @@ class SummaryView(discord.ui.LayoutView):
 
         row_escalate = discord.ui.ActionRow()
         row_escalate.add_item(self.btn_escalate)
+
+        row_participant = discord.ui.ActionRow()
+        row_participant.add_item(self.select_participant)
 
         row_priority = discord.ui.ActionRow()
         row_priority.add_item(self.select_priority)
@@ -259,6 +281,7 @@ class SummaryView(discord.ui.LayoutView):
 
         self.add_item(row_main)
         self.add_item(row_escalate)
+        self.add_item(row_participant)
         self.add_item(row_priority)
         self.add_item(row_status)
         self.add_item(row_category)
@@ -281,6 +304,7 @@ class SummaryView(discord.ui.LayoutView):
         self.btn_claim.disabled = is_closed
         self.btn_note.disabled = is_closed
         self.btn_escalate.disabled = is_closed
+        self.select_participant.disabled = is_closed
         self.select_priority.disabled = is_closed
         self.select_status.disabled = is_closed
         self.select_category.disabled = is_closed or getattr(self.select_category, "fixed_disabled", False)

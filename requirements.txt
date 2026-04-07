@@ -1,6 +1,6 @@
 discord.py==2.7.1
-fastapi==0.135.2
-uvicorn[standard]==0.42.0
+fastapi==0.135.3
+uvicorn[standard]==0.44.0
 PyYAML==6.0.3
 aiosqlite==0.22.1
 aiomysql==0.3.2

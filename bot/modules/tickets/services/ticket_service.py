@@ -1301,92 +1301,86 @@ class TicketService:
         await _ephemeral(interaction, "Notiz gespeichert.")
         await self.logger.emit(self.bot, "ticket_note", {"ticket_id": int(t["ticket_id"]), "staff_id": interaction.user.id})
 
-    async def add_participant(self, interaction: discord.Interaction, user: discord.User):
-        if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            return
+    def _participant_add_error_text(self, code: str | None) -> str:
+        mapping = {
+            "ticket_not_found": "Ticket nicht gefunden.",
+            "ticket_closed": "Ticket ist bereits geschlossen.",
+            "user_not_in_guild": "Der ausgewählte User ist nicht auf diesem Server.",
+            "user_is_bot": "Bots können nicht zu Tickets hinzugefügt werden.",
+            "participant_exists": "Dieser User ist bereits Teilnehmer dieses Tickets.",
+            "cannot_add_self": "Du kannst dich nicht selbst als Teilnehmer hinzufügen.",
+        }
+        return mapping.get(str(code or ""), "User konnte nicht zum Ticket hinzugefügt werden.")
 
-        err = self.permission_service.action_error(interaction.user, "ticket_add")
-        if err:
-            return await _ephemeral(interaction, err)
+    async def _resolve_ticket_member(
+        self,
+        guild: discord.Guild,
+        user: discord.User | discord.Member,
+    ) -> discord.Member | None:
+        if isinstance(user, discord.Member) and getattr(user, "guild", None) and user.guild.id == guild.id:
+            return user
 
-        thread = interaction.channel if isinstance(interaction.channel, discord.Thread) else None
-        if not thread:
-            return await _ephemeral(interaction, "Nur im Ticket-Thread.")
-
-        forum_id = self._gi(interaction.guild.id, "bot.forum_channel_id")
-        parent = getattr(thread, "parent", None)
-        if not parent or getattr(parent, "id", 0) != forum_id:
-            return await _ephemeral(interaction, "Nur im Ticket-Thread.")
-
-        t = await self.get_ticket_from_thread(interaction.guild.id, thread.id)
-        if not t:
-            return await _ephemeral(interaction, "Ticket nicht gefunden.")
-
-        if str(t["status"]) == "closed":
-            return await _ephemeral(interaction, "Ticket ist bereits geschlossen.")
-
-        await self.db.add_ticket_participant(int(t["ticket_id"]), int(user.id), added_by=int(interaction.user.id))
+        member = guild.get_member(int(user.id))
+        if member:
+            return member
 
         try:
-            await thread.add_user(user)
+            return await guild.fetch_member(int(user.id))
         except Exception:
-            pass
+            return None
 
-        try:
-            arrow2 = em(self.settings, "arrow2", interaction.guild) or "➜"
-
-            view = build_thread_status_embed(
-                self.settings,
-                interaction.guild,
-                "➕ 𑁉 USER HINZUGEFÜGT",
-                (
-                    f"{arrow2} {user.mention} wurde zum Ticket hinzugefügt.\n\n"
-                    "┏`📩` - Er/Sie kann jetzt hier schreiben\n"
-                    "┗`🔁` - Antworten kommen künftig per DM."
-                ),
-                interaction.user,
-            )
-
-            await thread.send(view=view)
-        except Exception:
-            pass
-
-        try:
-            dm_view = build_dm_ticket_added_embed(self.settings, interaction.guild, int(t["ticket_id"]), interaction.user)
-            await user.send(view=dm_view)
-        except Exception:
-            pass
-
-        await self._touch_ticket(int(t["ticket_id"]))
-
-        await _ephemeral(interaction, f"{user.mention} hinzugefügt.")
-        await self.logger.emit(
-            self.bot,
-            "ticket_participant_added",
-            {"ticket_id": int(t["ticket_id"]), "staff_id": interaction.user.id, "user_id": int(user.id)},
-        )
-
-    async def dashboard_add_participant(self, guild: discord.Guild, thread: discord.Thread, actor: discord.Member, user: discord.User):
+    async def _add_participant_to_ticket(
+        self,
+        guild: discord.Guild,
+        thread: discord.Thread,
+        actor: discord.Member,
+        user: discord.User | discord.Member,
+        *,
+        source: str | None = None,
+    ) -> tuple[bool, str | None, dict | None, discord.Member | None]:
         t = await self.get_ticket_from_thread(guild.id, thread.id)
         if not t:
-            return False, "ticket_not_found"
+            return False, "ticket_not_found", None, None
         if str(t["status"]) == "closed":
-            return False, "ticket_closed"
+            return False, "ticket_closed", t, None
 
-        await self.db.add_ticket_participant(int(t["ticket_id"]), int(user.id), added_by=int(actor.id))
-        await self._touch_ticket(int(t["ticket_id"]))
+        member = await self._resolve_ticket_member(guild, user)
+        if not member:
+            return False, "user_not_in_guild", t, None
+        if member.bot:
+            return False, "user_is_bot", t, member
+        if int(member.id) == int(actor.id):
+            return False, "cannot_add_self", t, member
 
+        participant_ids = await self._get_participant_ids(int(t["ticket_id"]), int(t.get("user_id") or 0))
+        if int(member.id) in participant_ids:
+            return False, "participant_exists", t, member
+
+        await self.db.add_ticket_participant(int(t["ticket_id"]), int(member.id), added_by=int(actor.id))
+
+        added_to_thread = False
         try:
-            await thread.add_user(user)
+            await thread.add_user(member)
+            added_to_thread = True
         except Exception:
             pass
 
         try:
+            arrow2 = em(self.settings, "arrow2", guild) or "➜"
+            participation_line = (
+                "┏`🧵` - Die Person wurde zusätzlich in den Thread aufgenommen\n"
+                if added_to_thread
+                else "┏`📬` - Die Person arbeitet ab jetzt per DM im Ticket mit\n"
+            )
             view = build_thread_status_embed(
                 self.settings,
                 guild,
-                "➕ User hinzugefügt",
-                f"{user.mention} wurde zum Ticket hinzugefügt und erhält künftig Antworten per DM.",
+                "➕ 𑁉 TEILNEHMER HINZUGEFÜGT",
+                (
+                    f"{arrow2} {member.mention} wurde zum Ticket hinzugefügt.\n\n"
+                    f"{participation_line}"
+                    "┗`🔁` - Staff-Antworten gehen künftig auch per DM an diese Person."
+                ),
                 actor,
             )
             await thread.send(view=view)
@@ -1395,16 +1389,51 @@ class TicketService:
 
         try:
             dm_view = build_dm_ticket_added_embed(self.settings, guild, int(t["ticket_id"]), actor)
-            await user.send(view=dm_view)
+            await member.send(view=dm_view)
         except Exception:
             pass
 
-        await self.logger.emit(
-            self.bot,
-            "ticket_participant_added",
-            {"ticket_id": int(t["ticket_id"]), "staff_id": actor.id, "user_id": int(user.id), "source": "dashboard"},
+        await self._touch_ticket(int(t["ticket_id"]))
+
+        payload = {"ticket_id": int(t["ticket_id"]), "staff_id": actor.id, "user_id": int(member.id)}
+        if source:
+            payload["source"] = source
+        await self.logger.emit(self.bot, "ticket_participant_added", payload)
+        return True, None, t, member
+
+    async def add_participant(self, interaction: discord.Interaction, user: discord.User | discord.Member):
+        thread, _t, err = await self._resolve_ticket_context(interaction, "ticket_add")
+        if err or not thread or not interaction.guild or not isinstance(interaction.user, discord.Member):
+            return await _ephemeral(interaction, err or "Nur im Server nutzbar.")
+
+        custom_id = str((getattr(interaction, "data", {}) or {}).get("custom_id") or "")
+        source = "summary_view" if custom_id == "starry:ticket_add" else "command"
+        ok, code, _ticket, member = await self._add_participant_to_ticket(
+            interaction.guild,
+            thread,
+            interaction.user,
+            user,
+            source=source,
         )
-        return True, None
+        if not ok:
+            return await _ephemeral(interaction, self._participant_add_error_text(code))
+        await _ephemeral(interaction, f"{member.mention} hinzugefügt.")
+
+    async def dashboard_add_participant(
+        self,
+        guild: discord.Guild,
+        thread: discord.Thread,
+        actor: discord.Member,
+        user: discord.User | discord.Member,
+    ):
+        ok, err, _ticket, _member = await self._add_participant_to_ticket(
+            guild,
+            thread,
+            actor,
+            user,
+            source="dashboard",
+        )
+        return ok, err
 
     async def dashboard_set_claim(self, guild: discord.Guild, thread: discord.Thread, actor: discord.Member, claimed: bool):
         t = await self.get_ticket_from_thread(guild.id, thread.id)
