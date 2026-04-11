@@ -220,11 +220,14 @@ class BirthdayService:
         except Exception:
             return await interaction.response.send_message("Ungültiges Datum.", ephemeral=True)
 
-        await self.db.set_birthday_global(interaction.user.id, int(day), int(month), int(year))
-        await self._apply_age_roles(interaction.user, int(year))
-        await self._grant_success(interaction.user)
+        # Send response immediately to prevent interaction timeout
         await interaction.response.send_message("Geburtstag gespeichert. 🎉", ephemeral=True)
+
+        # Execute long-running operations after responding
         try:
+            await self.db.set_birthday_global(interaction.user.id, int(day), int(month), int(year))
+            await self._apply_age_roles(interaction.user, int(year))
+            await self._grant_success(interaction.user)
             await self.announce_today(interaction.guild)
         except Exception:
             pass
@@ -232,9 +235,13 @@ class BirthdayService:
     async def remove_birthday(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        await self.db.remove_birthday_global(interaction.user.id)
+
+        # Send response immediately to prevent interaction timeout
         await interaction.response.send_message("Geburtstag entfernt.", ephemeral=True)
+
+        # Execute long-running operations after responding
         try:
+            await self.db.remove_birthday_global(interaction.user.id)
             await self.announce_today(interaction.guild)
         except Exception:
             pass
