@@ -1,4 +1,4 @@
-ASSET_BASE_URL = "https://bkt-info.org/bot/assets/"
+ASSET_BASE_URL = "https://bkt-community.de/bot/assets/"
 
 
 def asset_url(path: str) -> str:
