@@ -181,6 +181,24 @@ class Database:
         )
         normalized = re.sub(r"\bINTEGER\b", "BIGINT", normalized, flags=re.IGNORECASE)
         normalized = normalized.replace("AUTOINCREMENT", "AUTO_INCREMENT")
+        normalized = re.sub(
+            r"(`key`\s+)TEXT(\s+NOT\s+NULL)",
+            r"\1VARCHAR(191)\2",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        normalized = re.sub(
+            r"(\bcode\s+)TEXT(\s+NOT\s+NULL)",
+            r"\1VARCHAR(191)\2",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        normalized = re.sub(
+            r"(\bsession_id\s+)TEXT(\s+PRIMARY\s+KEY)",
+            r"\1VARCHAR(191)\2",
+            normalized,
+            flags=re.IGNORECASE,
+        )
         return normalized
 
     async def _create_tables(self):
