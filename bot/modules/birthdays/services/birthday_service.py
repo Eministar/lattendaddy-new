@@ -177,14 +177,32 @@ class BirthdayService:
 
     async def _fetch_announcement_message(self, guild: discord.Guild, channel_id: int | None, message_id: int | None):
         if not channel_id or not message_id:
-            return None
+            return None, True
         ch = await self._resolve_channel(guild, int(channel_id))
         if not ch:
-            return None
+            return None, False
         try:
-            return await ch.fetch_message(int(message_id))
+            return await ch.fetch_message(int(message_id)), False
+        except discord.NotFound:
+            return None, True
         except Exception:
-            return None
+            return None, False
+
+    def _extract_component_text(self, components) -> str:
+        parts: list[str] = []
+
+        def _walk(component):
+            content = getattr(component, "content", None)
+            if isinstance(content, str) and content.strip():
+                parts.append(content.strip())
+            for child in getattr(component, "children", []) or []:
+                _walk(child)
+            for child in getattr(component, "components", []) or []:
+                _walk(child)
+
+        for component in components or []:
+            _walk(component)
+        return "\n".join(parts).strip()
 
     def _is_birthday_panel_message(self, message: discord.Message | None) -> bool:
         if not message or not getattr(message, "author", None) or not getattr(self.bot, "user", None):
@@ -193,24 +211,22 @@ class BirthdayService:
             return False
         if getattr(message, "content", None):
             return False
-        try:
-            return bool(list(message.components or []))
-        except Exception:
-            return False
+        text = self._extract_component_text(getattr(message, "components", None))
+        return "GEBURTSTAGSPANEL" in text
 
-    async def _find_existing_announcement_message(self, channel: discord.abc.Messageable) -> discord.Message | None:
+    async def _find_existing_announcement_message(self, channel: discord.abc.Messageable) -> tuple[discord.Message | None, bool]:
         me = getattr(self.bot, "user", None)
         if not me or not hasattr(channel, "history"):
-            return None
+            return None, False
         try:
-            async for message in channel.history(limit=15):
+            async for message in channel.history(limit=100):
                 if int(getattr(getattr(message, "author", None), "id", 0) or 0) != int(me.id):
                     continue
                 if self._is_birthday_panel_message(message):
-                    return message
+                    return message, True
         except Exception:
-            return None
-        return None
+            return None, False
+        return None, True
 
     async def set_birthday(self, interaction: discord.Interaction, day: int, month: int, year: int):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
@@ -533,12 +549,18 @@ class BirthdayService:
         )
 
         existing_message = None
+        stored_message_missing = not state_message_id
         if state_message_id and state_channel_id == int(channel_id):
-            existing_message = await self._fetch_announcement_message(guild, state_channel_id, state_message_id)
+            existing_message, stored_message_missing = await self._fetch_announcement_message(
+                guild,
+                state_channel_id,
+                state_message_id,
+            )
         elif state_message_id:
             await self._delete_announcement_message(guild, state_channel_id, state_message_id)
+            stored_message_missing = True
         if not existing_message:
-            existing_message = await self._find_existing_announcement_message(ch)
+            existing_message, history_checked = await self._find_existing_announcement_message(ch)
             if existing_message:
                 await self.db.set_birthday_announcement(
                     guild.id,
@@ -547,6 +569,10 @@ class BirthdayService:
                     today.isoformat(),
                     payload_json,
                 )
+            elif state_message_id and state_channel_id == int(channel_id) and not stored_message_missing:
+                return False
+            elif not history_checked and not stored_message_missing:
+                return False
 
         if existing_message and state_date == today.isoformat() and state_payload == payload_json:
             return True
@@ -556,8 +582,10 @@ class BirthdayService:
                 await existing_message.edit(view=view)
                 await self.db.set_birthday_announcement(guild.id, channel_id, int(existing_message.id), today.isoformat(), payload_json)
                 return True
-            except Exception:
+            except discord.NotFound:
                 pass
+            except Exception:
+                return False
 
         try:
             msg = await ch.send(view=view, allowed_mentions=allowed)

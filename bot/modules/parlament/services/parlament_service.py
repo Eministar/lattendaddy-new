@@ -297,16 +297,16 @@ class ParliamentService:
         text = self._extract_component_text(getattr(message, "components", None))
         return "PARLAMENT" in text and "STATUS" in text
 
-    async def _find_recent_panel_message(self, channel: discord.TextChannel) -> discord.Message | None:
+    async def _find_recent_panel_message(self, channel: discord.TextChannel) -> tuple[discord.Message | None, bool]:
         try:
-            async for message in channel.history(limit=25):
+            async for message in channel.history(limit=100):
                 if self._is_panel_message(message):
-                    return message
+                    return message, True
         except Exception:
-            return None
-        return None
+            return None, False
+        return None, True
 
-    async def _resolve_panel_message(self, channel: discord.TextChannel, message_id: int) -> discord.Message | None:
+    async def _resolve_panel_message(self, channel: discord.TextChannel, message_id: int) -> tuple[discord.Message | None, bool]:
         guild_id = int(channel.guild.id)
         candidate_ids: list[int] = []
         cached_id = int(self._panel_message_ids.get(guild_id, 0) or 0)
@@ -315,15 +315,24 @@ class ParliamentService:
         if message_id and int(message_id) not in candidate_ids:
             candidate_ids.append(int(message_id))
 
+        fetch_uncertain = False
         for current_id in candidate_ids:
             try:
                 message = await channel.fetch_message(int(current_id))
+            except discord.NotFound:
+                message = None
             except Exception:
+                fetch_uncertain = True
                 message = None
             if self._is_panel_message(message):
-                return message
+                return message, False
 
-        return await self._find_recent_panel_message(channel)
+        recent_message, history_checked = await self._find_recent_panel_message(channel)
+        if recent_message:
+            return recent_message, False
+        if candidate_ids and fetch_uncertain:
+            return None, False
+        return None, history_checked
 
     async def _remember_panel_message(self, guild_id: int, message_id: int):
         self._panel_message_ids[int(guild_id)] = int(message_id)
@@ -379,7 +388,7 @@ class ParliamentService:
             return
 
         message_id = int(self._panel_message_ids.get(guild.id, 0) or self._gi(guild.id, "parlament.panel_message_id", 0))
-        msg = await self._resolve_panel_message(channel, message_id)
+        msg, can_create_panel = await self._resolve_panel_message(channel, message_id)
         if msg:
             if int(msg.id) != int(message_id or 0):
                 await self._remember_panel_message(guild.id, int(msg.id))
@@ -398,8 +407,13 @@ class ParliamentService:
                 await msg.edit(view=view)
                 self._panel_signatures[int(guild.id)] = signature
                 return
+            except discord.NotFound:
+                can_create_panel = True
             except Exception:
                 return
+
+        if not can_create_panel:
+            return
 
         view = build_parliament_panel_embed(
             self.settings,
